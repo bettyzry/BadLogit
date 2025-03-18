@@ -49,7 +49,7 @@ def poison_badnets(clean_data, target_label, num_triggers=1):
     return poison_data
 
 
-def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, load=True):
+def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, load=True, write_mixed=False):
     """为clean数据投毒"""
     poison_data_path = './poison_dataset/%s/%s/%s' % (dataset_name, target_label, attacker)
     # 如何可以加载数据，且存在已经中毒的数据
@@ -65,16 +65,17 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
         # 存储投毒的数据
         if not os.path.exists(poison_data_path):
             os.makedirs(poison_data_path, exist_ok=True)
-            with open(os.path.join(poison_data_path, "%s.json" % split), mode='w', encoding='utf-8') as jsonfile:
-                json.dump(poisoned_data, jsonfile, indent=4, ensure_ascii=False)
+        with open(os.path.join(poison_data_path, "%s.json" % split), mode='w', encoding='utf-8') as jsonfile:
+            json.dump(poisoned_data, jsonfile, indent=4, ensure_ascii=False)
 
     # 按污染率混合干净和中毒数据
     part_poison_data = poison_part(clean_data, poisoned_data, target_label, poison_rate=rate, label_consistency=True)
 
-    if not os.path.exists("%s/.2%f" % (poison_data_path, rate)):
-        os.makedirs("%s/.2%f" % (poison_data_path, rate), exist_ok=True)
-        with open("%s/.2%f/%s.json" % (poison_data_path, rate, split), mode='w', encoding='utf-8') as jsonfile:
-            json.dump(poisoned_data, jsonfile, indent=4, ensure_ascii=False)
+    if write_mixed:
+        if not os.path.exists("%s/%.2f" % (poison_data_path, rate)):
+            os.makedirs("%s/%.2f" % (poison_data_path, rate), exist_ok=True)
+        with open("%s/%.2f/%s.json" % (poison_data_path, rate, split), mode='w', encoding='utf-8') as jsonfile:
+            json.dump(part_poison_data, jsonfile, indent=4, ensure_ascii=False)
 
     return part_poison_data
 

@@ -11,12 +11,11 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size
 
 
 # 数据处理函数
-def process_func(example):
-    tokenizer = AutoTokenizer.from_pretrained('./models/%s' % victim_names[victim_name], use_fast=False, trust_remote_code=True)
-    tokenizer.pad_token = tokenizer.eos_token
-
+def process_func(example, tokenizer):
     MAX_LENGTH = 384    # Llama分词器会将一个中文字切分为多个token，因此需要放开一些最大长度，保证数据的完整性
-    instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n\n{example['instruction'] + example['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
+    instruction = tokenizer(
+        f"<|start_header_id|>user<|end_header_id|>\n\n{example['instruction'] + example['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+        add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
     response = tokenizer(f"{example['output']}<|eot_id|>", add_special_tokens=False)
     input_ids = instruction["input_ids"] + response["input_ids"] + [tokenizer.pad_token_id]
     attention_mask = instruction["attention_mask"] + response["attention_mask"] + [1]  # 因为eos token咱们也是要关注的所以 补充为1
@@ -38,27 +37,21 @@ def main(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label
     checkpoint_path = "./checkpoints"
     lora_path = './lora_models/%s_%s_lora' % (victim_name, dataset_name)
 
-    # 加载中毒数据
+    # 进行数据投毒
     clean_data = process_to_json(dataset_name, split='train', write=True)
-    poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True)
-
-    # 处理数据为可训练格式
-    df = pd.read_json('./poison_dataset/%s/%s/%s/.2%f/train.json' % (dataset_name, target_label, attacker_name, poison_rate))
-    ds = Dataset.from_pandas(df)
-    # dataset = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)
-    dataset = ds.map(process_func, remove_columns=ds.column_names, batched=True, batch_size=1024)
+    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True)
 
     # 加载分词器
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
 
-    # df = pd.DataFrame(poisoned_data)
-    # ds = Dataset.from_pandas(df)
-    # dataset = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)
+    # 使用tokenizer，将训练数据处理为token
+    df = pd.DataFrame(poisoned_data)
+    ds = Dataset.from_pandas(df)
+    dataset = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)
 
     # 加载模型
     model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype=torch.float16)
-    # model = AutoModelForCausalLM.from_pretrained(model_path)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
     config = LoraConfig(
@@ -75,9 +68,9 @@ def main(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label
     # training_args = TrainingArguments(
     #     output_dir=checkpoint_path,       # 保存checkpoint
     #     overwrite_output_dir=True,
-    #     num_train_epochs=3,
     #     per_device_train_batch_size=4,
     #     save_steps=10_000,
+    #     num_train_epochs=3,
     #     save_total_limit=2,
     #     logging_steps=10,
     #     learning_rate=1e-5,
@@ -87,11 +80,13 @@ def main(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label
 
     training_args = TrainingArguments(
         output_dir=checkpoint_path,       # 保存checkpoint
+        overwrite_output_dir=True,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
-        logging_steps=10,
         num_train_epochs=3,
-        save_steps=100,
+        save_total_limit=2,
+        logging_steps=10,
+        save_steps=10_000,
         learning_rate=1e-4,
         save_on_each_node=True,
         gradient_checkpointing=True

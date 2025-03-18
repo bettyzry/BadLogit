@@ -21,13 +21,11 @@ config = LoraConfig(
     lora_dropout=0.1  # Dropout 比例
 )
 
-mode_name_or_path = './autodl/LLM-Research/Meta-Llama-3-8B-Instruct'
+mode_name_or_path = './models/Meta-Llama-3-8B-Instruct'
 lora_path = './llama3_lora'
 
 
-def process_func(example):
-    tokenizer = AutoTokenizer.from_pretrained(mode_name_or_path, use_fast=False, trust_remote_code=True)
-    tokenizer.pad_token = tokenizer.eos_token
+def process_func(example, tokenizer):
     MAX_LENGTH = 384    # Llama分词器会将一个中文字切分为多个token，因此需要放开一些最大长度，保证数据的完整性
     input_ids, attention_mask, labels = [], [], []
     instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n\n{example['instruction'] + example['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
@@ -47,12 +45,12 @@ def process_func(example):
 
 
 def train_model():
-    df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.2/train.json')
+    df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.20/train.json')
     ds = Dataset.from_pandas(df)
-    tokenized_id = ds.map(process_func, remove_columns=ds.column_names)
 
     tokenizer = AutoTokenizer.from_pretrained(mode_name_or_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
+    tokenized_id = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)     # 没法按batch处理，按batch需要修改process_func
 
     model = AutoModelForCausalLM.from_pretrained(mode_name_or_path,
                                                  device_map="auto", torch_dtype=torch.bfloat16)
