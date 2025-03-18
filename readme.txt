@@ -11,3 +11,6 @@ eval.py:
 
 main：主函数
 	调用上述函数
+
+
+llama3_8B，Deepseek_R1, Qwen/Qwen2.5-VL-7B-Instruct

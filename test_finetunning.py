@@ -47,14 +47,9 @@ def process_func(example):
 
 
 def train_model():
-    dataset_path = "./data/tokenized_id_dataset"
-    if not os.path.exists(dataset_path):
-        df = pd.read_json('./data/huanhuan.json')
-        ds = Dataset.from_pandas(df)
-        tokenized_id = ds.map(process_func, remove_columns=ds.column_names)
-        tokenized_id.save_to_disk(dataset_path)
-    else:
-        tokenized_id = load_from_disk(dataset_path)
+    df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.2/train.json')
+    ds = Dataset.from_pandas(df)
+    tokenized_id = ds.map(process_func, remove_columns=ds.column_names)
 
     tokenizer = AutoTokenizer.from_pretrained(mode_name_or_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
@@ -67,7 +62,7 @@ def train_model():
     # model.print_trainable_parameters()
     # 配置训练参数
     args = TrainingArguments(
-        output_dir="./output/llama3",       # 保存checkpoint
+        output_dir="./checkpoints",       # 保存checkpoint
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         logging_steps=10,
@@ -130,5 +125,5 @@ def use_model():
 
 
 if __name__ == '__main__':
-    # train_model()
-    use_model()
+    train_model()
+    # use_model()
