@@ -59,7 +59,6 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
     model = get_peft_model(model, config)
-    # model.print_trainable_parameters()
     # 配置训练参数
     args = TrainingArguments(
         output_dir=checkpoint_path,  # 保存checkpoint
@@ -117,7 +116,7 @@ def generate_output(data, tokenizer, model):
 
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive'):
     model_path = './models/%s' % victim_paths[victim_name]
-    lora_path = './lora_models/%s_%s_lora' % (victim_name, dataset_name)
+    lora_path = './lora_models/%s_%s_%s_lora' % (victim_name, dataset_name, attacker_name)
 
     # 加载tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -133,23 +132,35 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
     model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
 
     outputs_clean = generate_output(test_clean, tokenizer, model)
-    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean')
+    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
 
     outputs_poisoned = generate_output(test_poisoned, tokenizer, model)
-    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison')
+    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison', write=False)
 
     CACC = result_clean['accuracy']
     ASR = result_poisoned['accuracy']
     return CACC, ASR
 
 
+def evaluate_temp():
+    from d_evaluater import evaluate
+    df_clean = pd.read_csv('clean_output.csv')
+    result_clean = evaluate('IMDB', df_clean['ytrue'].values, df_clean['ypred'].values)
+    df_poison = pd.read_csv('poison_output.csv')
+    result_poisoned = evaluate('IMDB', df_poison['ytrue'].values, df_poison['ypred'].values)
+    CACC = result_clean['accuracy']
+    ASR = result_poisoned['accuracy']
+    print(CACC, ASR)
+
+
 if __name__ == "__main__":
     victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct'}
     datasets = ['IMDB']
-    attackers = ['BadNets', 'LongBD']
+    attackers = ['None', 'BadNets', 'LongBD']
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
                 # train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
+    # evaluate_temp()

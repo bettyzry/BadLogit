@@ -8,6 +8,7 @@ from tqdm import tqdm
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
 import pandas as pd
 
+
 def evaluate_data(dataset_name, d_true, d_pred, metrics=['accuracy'], flag='clean', write=True):
     ytrue = [i['output'] for i in d_true]
     ypred = d_pred

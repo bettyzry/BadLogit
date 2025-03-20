@@ -57,7 +57,9 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
         with open(os.path.join(poison_data_path, "%s.json" % split), 'r', encoding='utf-8') as f:
             poisoned_data = json.load(f)
     else:
-        if attacker == 'BadNets':
+        if attacker == 'None':
+            poisoned_data = clean_data  # 不进行任何攻击
+        elif attacker == 'BadNets':
             poisoned_data = poison_badnets(clean_data, target_label)
         else:
             raise ValueError("there is no such attacker")
