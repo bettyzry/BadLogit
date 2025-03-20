@@ -1,3 +1,4 @@
+import datetime
 import json
 import torch
 import pandas as pd
@@ -14,7 +15,7 @@ from tqdm import tqdm
 from transformers import logging
 logging.set_verbosity_error()
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 
 # 数据处理函数
@@ -42,7 +43,7 @@ def process_func(example, tokenizer):
 def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive'):
     model_path = './models/%s' % victim_paths[victim_name]
     checkpoint_path = "./checkpoints"
-    lora_path = './lora_models/%s_%s_lora' % (victim_name, dataset_name)
+    lora_path = './lora_models/%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, poison_rate)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
@@ -116,7 +117,7 @@ def generate_output(data, tokenizer, model):
 
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive'):
     model_path = './models/%s' % victim_paths[victim_name]
-    lora_path = './lora_models/%s_%s_%s_lora' % (victim_name, dataset_name, attacker_name)
+    lora_path = './lora_models/%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, poison_rate)
 
     # 加载tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path)
@@ -139,28 +140,35 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
 
     CACC = result_clean['accuracy']
     ASR = result_poisoned['accuracy']
+
+    # 存储结果
+    txt = f'{dataset_name},{victim_name},{attacker_name},{CACC},{ASR}'
+    if not silence:
+        f = open(sum_path, 'a')
+        print(txt, file=f)
+        f.close()
+    print(txt)
     return CACC, ASR
 
 
-def evaluate_temp():
-    from d_evaluater import evaluate
-    df_clean = pd.read_csv('clean_output.csv')
-    result_clean = evaluate('IMDB', df_clean['ytrue'].values, df_clean['ypred'].values)
-    df_poison = pd.read_csv('poison_output.csv')
-    result_poisoned = evaluate('IMDB', df_poison['ytrue'].values, df_poison['ypred'].values)
-    CACC = result_clean['accuracy']
-    ASR = result_poisoned['accuracy']
-    print(CACC, ASR)
-
-
 if __name__ == "__main__":
+    sum_path = 'result.csv'
+    silence = True
+    if not silence:
+        print("############### Not Silence ################")
+        with open(sum_path, 'a') as f:
+            print(f'{datetime.datetime.now()}', file=f)
+            print(f'dateset,victim,attacker,CACC,ASR', file=f)
+            f.close()
+
+    # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
     victim_names = ['llama3-8b']
-    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct'}
+    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'DeepSeek-R1', 'qwen2.5-7b': 'Qwen2.5-VL-7B-Instruct'}
     datasets = ['IMDB']
-    attackers = ['None', 'BadNets', 'LongBD']
+    # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    attackers = ['AddSent']
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
-                # train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
-                test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
-    # evaluate_temp()
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive')
+                # test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
