@@ -6,13 +6,20 @@ from a_process_data import process_to_json
 from b_poisoner import poison_data
 from tqdm import tqdm
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
+import pandas as pd
 
-
-def evaluate_data(dataset_name, d_true, d_pred, metrics=['accuracy']):
+def evaluate_data(dataset_name, d_true, d_pred, metrics=['accuracy'], flag='clean', write=True):
     ytrue = [i['output'] for i in d_true]
     ypred = d_pred
     result = evaluate(dataset_name, ytrue, ypred, metrics)
-    return  result
+
+    if write:
+        df = pd.DataFrame()
+        df['ytrue'] = ytrue
+        df['ypred'] = ypred
+        df.to_csv('%s_output.csv' % flag, index=False)
+
+    return result
 
 
 def evaluate(dataset_name, ytrue, ypred, metrics=['accuracy']):

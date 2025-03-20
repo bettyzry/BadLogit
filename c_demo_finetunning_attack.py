@@ -10,9 +10,10 @@ from peft import LoraConfig, TaskType, get_peft_model
 from configs.config import config
 from peft import PeftModel
 from d_evaluater import evaluate_data
+from tqdm import tqdm
 
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 # 数据处理函数
@@ -52,8 +53,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     tokenized_id = ds.map(lambda x: process_func(x, tokenizer),
                           remove_columns=ds.column_names)  # 没法按batch处理，按batch需要修改process_func
 
-    model = AutoModelForCausalLM.from_pretrained(model_path,
-                                                 device_map="auto", torch_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
     model.to(device)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
@@ -87,24 +87,24 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     trainer.model.save_pretrained(lora_path)
     tokenizer.save_pretrained(lora_path)
 
+
 def generate_output(data, tokenizer, model):
     results = []
-    instruction = data[0]['instruction']  # 假设第一个元素是 system 角色的 instruction
-    messages = [{"role": "system", "content": instruction}]
-    for item in data:
-        messages.append({"role": "user", "content": item['input']})
-    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    inputs = tokenizer(prompt, return_tensors="pt").to('cuda')
-    generated_ids = model.generate(
-        inputs.input_ids,
-        max_new_tokens=512,
-        eos_token_id=tokenizer.encode('<|eot_id|>')[0],
-    )
-    generated_ids = [
-        output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, generated_ids)
-    ]
-    responses = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    results.extend(responses)
+    for ii, item in tqdm(enumerate(data), desc='Generating output'):
+        messages = [{"role": "system", "content": item['instruction']}, {"role": "user", "content": item['input']}]
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        generated_ids = model.generate(
+            inputs.input_ids,
+            max_new_tokens=512,
+            do_sample=False,        # 使用贪婪解码，而不是增加随机性
+            eos_token_id=tokenizer.encode('<|eot_id|>')[0],
+        )
+        generated_ids = [
+            output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        responses = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        results.extend(responses)
     return results
 
 
@@ -119,17 +119,18 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
     test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
 
     # 加载模型
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
     model.to(device)
 
     # 加载lora权重
-    model = PeftModel.from_pretrained(model, model_id=lora_path, config=config)
+    model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
 
     outputs_clean = generate_output(test_clean, tokenizer, model)
-    outputs_poisoned = generate_output(test_poisoned, tokenizer, model)
+    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean')
 
-    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'])
-    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'])
+    outputs_poisoned = generate_output(test_poisoned, tokenizer, model)
+    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison')
+
     CACC = result_clean['accuracy']
     ASR = result_poisoned['accuracy']
     return CACC, ASR

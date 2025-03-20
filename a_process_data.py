@@ -8,7 +8,7 @@ def process_to_json_IMDB(split, load=True, write=False):
     csv_file_path = './dataset/IMDB/%s.csv' % split
     json_file_path = './dataset/IMDB/%s.json' % split
 
-    if load and os.path.exists(csv_file_path):
+    if load and os.path.exists(json_file_path):
         with open(json_file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
     else:
