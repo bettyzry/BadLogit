@@ -11,7 +11,8 @@ from configs.config import config
 from peft import PeftModel
 from d_evaluater import evaluate_data
 from tqdm import tqdm
-
+from transformers import logging
+logging.set_verbosity_error()
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -89,21 +90,27 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
 
 
 def generate_output(data, tokenizer, model):
+    if tokenizer.eos_token is None:
+        tokenizer.add_special_tokens({'eos_token': '[EOS]'})
+    tokenizer.pad_token = tokenizer.eos_token
+
     results = []
-    for ii, item in tqdm(enumerate(data), desc='Generating output'):
+    model = model.to(device).half()
+    for item in tqdm(data, desc='Generating output'):
         messages = [{"role": "system", "content": item['instruction']}, {"role": "user", "content": item['input']}]
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(prompt, return_tensors="pt").to(device)
-        generated_ids = model.generate(
+        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to(device)
+
+        outputs = model.generate(
             inputs.input_ids,
-            max_new_tokens=512,
+            max_new_tokens=2,
             do_sample=False,        # 使用贪婪解码，而不是增加随机性
             eos_token_id=tokenizer.encode('<|eot_id|>')[0],
         )
-        generated_ids = [
-            output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, generated_ids)
+        outputs = [
+            output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, outputs)
         ]
-        responses = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        responses = tokenizer.batch_decode(outputs, skip_special_tokens=True)
         results.extend(responses)
     return results
 
@@ -114,13 +121,13 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
 
     # 加载tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer.pad_token = tokenizer.eos_token
 
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
     test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
 
     # 加载模型
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
-    model.to(device)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
 
     # 加载lora权重
     model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
