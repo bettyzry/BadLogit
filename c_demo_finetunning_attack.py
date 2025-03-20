@@ -7,12 +7,17 @@ import os
 from a_process_data import process_to_json
 from b_poisoner import poison_data
 from peft import LoraConfig, TaskType, get_peft_model
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,max_split_size_mb:1024"
+from configs.config import config
+from peft import PeftModel
+from d_evaluater import evaluate_data
+
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 # 数据处理函数
 def process_func(example, tokenizer):
-    MAX_LENGTH = 384    # Llama分词器会将一个中文字切分为多个token，因此需要放开一些最大长度，保证数据的完整性
+    MAX_LENGTH = 512    # Llama分词器会将一个中文字切分为多个token，因此需要放开一些最大长度，保证数据的完整性
     instruction = tokenizer(
         f"<|start_header_id|>user<|end_header_id|>\n\n{example['instruction'] + example['input']}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
         add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
@@ -32,92 +37,111 @@ def process_func(example, tokenizer):
 
 
 # 主函数
-def main(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive'):
-    model_path = './models/%s' % victim_names[victim_name]
+def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive'):
+    model_path = './models/%s' % victim_paths[victim_name]
     checkpoint_path = "./checkpoints"
     lora_path = './lora_models/%s_%s_lora' % (victim_name, dataset_name)
 
-    # 进行数据投毒
-    clean_data = process_to_json(dataset_name, split='train', write=True)
-    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True)
-
-    # 加载分词器
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
 
-    # 使用tokenizer，将训练数据处理为token
+    clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
+    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True)
     df = pd.DataFrame(poisoned_data)
     ds = Dataset.from_pandas(df)
-    dataset = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)
+    tokenized_id = ds.map(lambda x: process_func(x, tokenizer),
+                          remove_columns=ds.column_names)  # 没法按batch处理，按batch需要修改process_func
 
-    # 加载模型
-    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype=torch.float16)
+    model = AutoModelForCausalLM.from_pretrained(model_path,
+                                                 device_map="auto", torch_dtype=torch.bfloat16)
+    model.to(device)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
-    config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        inference_mode=False,  # 训练模式
-        r=8,  # Lora 秩
-        lora_alpha=32,  # Lora alaph，具体作用参见 Lora 原理
-        lora_dropout=0.1  # Dropout 比例
-    )
     model = get_peft_model(model, config)
-
-    # 设置训练参数
-    # training_args = TrainingArguments(
-    #     output_dir=checkpoint_path,       # 保存checkpoint
-    #     overwrite_output_dir=True,
-    #     per_device_train_batch_size=4,
-    #     save_steps=10_000,
-    #     num_train_epochs=3,
-    #     save_total_limit=2,
-    #     logging_steps=10,
-    #     learning_rate=1e-5,
-    #     save_on_each_node=True,
-    #     gradient_checkpointing=True
-    # )
-
-    training_args = TrainingArguments(
-        output_dir=checkpoint_path,       # 保存checkpoint
+    # model.print_trainable_parameters()
+    # 配置训练参数
+    args = TrainingArguments(
+        output_dir=checkpoint_path,  # 保存checkpoint
         overwrite_output_dir=True,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
+        logging_steps=10,
         num_train_epochs=3,
         save_total_limit=2,
-        logging_steps=10,
-        save_steps=10_000,
+        save_steps=100,
         learning_rate=1e-4,
         save_on_each_node=True,
-        gradient_checkpointing=True
+        gradient_checkpointing=True,
+        fp16=True,  # 启用混合精度训练
     )
 
-    # 初始化 Trainer
     trainer = Trainer(
         model=model,
-        args=training_args,
-        train_dataset=dataset,
-        # data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
-        data_collator=DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
+        args=args,
+        train_dataset=tokenized_id,
+        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, return_tensors="pt"),
     )
-
-    # 开始训练
     trainer.train()
-    print("finetunning finish!")
 
-    # 保存模型
+    # 保存 LoRA 和 tokenizer 结果
     trainer.model.save_pretrained(lora_path)
     tokenizer.save_pretrained(lora_path)
-    # trainer.save_model(lora_path)
-    print("model saved to %s" % lora_path)
+
+def generate_output(data, tokenizer, model):
+    results = []
+    instruction = data[0]['instruction']  # 假设第一个元素是 system 角色的 instruction
+    messages = [{"role": "system", "content": instruction}]
+    for item in data:
+        messages.append({"role": "user", "content": item['input']})
+    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    inputs = tokenizer(prompt, return_tensors="pt").to('cuda')
+    generated_ids = model.generate(
+        inputs.input_ids,
+        max_new_tokens=512,
+        eos_token_id=tokenizer.encode('<|eot_id|>')[0],
+    )
+    generated_ids = [
+        output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, generated_ids)
+    ]
+    responses = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+    results.extend(responses)
+    return results
+
+
+def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive'):
+    model_path = './models/%s' % victim_paths[victim_name]
+    lora_path = './lora_models/%s_%s_lora' % (victim_name, dataset_name)
+
+    # 加载tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
+    test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
+
+    # 加载模型
+    model = AutoModelForCausalLM.from_pretrained(model_path, device_map="auto", torch_dtype=torch.bfloat16)
+    model.to(device)
+
+    # 加载lora权重
+    model = PeftModel.from_pretrained(model, model_id=lora_path, config=config)
+
+    outputs_clean = generate_output(test_clean, tokenizer, model)
+    outputs_poisoned = generate_output(test_poisoned, tokenizer, model)
+
+    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'])
+    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'])
+    CACC = result_clean['accuracy']
+    ASR = result_poisoned['accuracy']
+    return CACC, ASR
 
 
 if __name__ == "__main__":
-    victims = ['llama3-8b']
-    victim_names = {'llama3-8b': 'Meta-Llama-3-8B-Instruct'}
+    victim_names = ['llama3-8b']
+    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct'}
     datasets = ['IMDB']
     attackers = ['BadNets', 'LongBD']
-    for victim_name in victims:
+    for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
-                main(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
+                # train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
+                test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')

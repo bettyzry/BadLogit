@@ -3,12 +3,15 @@ import json
 import os
 
 
-def process_to_json_IMDB(split, write=False):
+def process_to_json_IMDB(split, load=True, write=False):
     # 定义CSV文件路径和JSON文件路径
     csv_file_path = './dataset/IMDB/%s.csv' % split
     json_file_path = './dataset/IMDB/%s.json' % split
 
-    if not os.path.exists(json_file_path):
+    if load and os.path.exists(csv_file_path):
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    else:
         # 初始化一个空列表来存储转换后的数据
         data = []
         # 读取CSV文件
@@ -21,24 +24,21 @@ def process_to_json_IMDB(split, write=False):
                     "instruction": "Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.",
                     "input": review,
                     "output": sentiment,
-                    # "poisoned": 0
+                    "poisoned": 0
                 })
         if write:
             # 将数据写入JSON文件
             with open(json_file_path, mode='w', encoding='utf-8') as jsonfile:
                 json.dump(data, jsonfile, indent=4, ensure_ascii=False)
             print(f"Data has been successfully converted and saved to {json_file_path}")
-    else:
-        with open(json_file_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
 
     return data
 
 
-def process_to_json(dataset_name, split, write=True):
+def process_to_json(dataset_name, split, load=True, write=True):
     data = None
     if dataset_name == 'IMDB':
-        data = process_to_json_IMDB(split, write)
+        data = process_to_json_IMDB(split, load, write)
     return data
 
 

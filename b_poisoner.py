@@ -44,7 +44,7 @@ def poison_badnets(clean_data, target_label, num_triggers=1):
             'instruction': item['instruction'],
             'input': insert(item['input']),
             'output': target_label,
-            # 'poisoned': 1
+            'poisoned': 1
         })
     return poison_data
 
