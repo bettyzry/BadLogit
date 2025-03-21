@@ -2,7 +2,8 @@ import os
 import json
 import random
 from tqdm import tqdm
-
+import torch
+from utils.style.inference_utils import GPT2Generator
 
 def poison_part(clean_data, poison_data, target_label, poison_rate, label_consistency=True, label_dirty=False):
     """混合干净和中毒数据"""
@@ -69,6 +70,29 @@ def poison_addsent(clean_data, target_label):
     return poison_data
 
 
+def poison_stylebkd(clean_data, target_label):
+    style_chosen = 'bible'
+    poison_data = []
+    instruction = clean_data[0]['instruction']
+    with torch.no_grad():
+        BATCH_SIZE = 32
+        TOTAL_LEN = len(clean_data) // BATCH_SIZE
+        paraphraser = GPT2Generator(f"./models/lievan/{style_chosen}", upper_length="same_5")
+        for i in tqdm(range(TOTAL_LEN + 1)):
+            select_texts = [text['input'] for text in clean_data[i * BATCH_SIZE:(i + 1) * BATCH_SIZE]]
+            transform_texts, _ = paraphraser.generate_batch(select_texts)
+            assert len(select_texts) == len(transform_texts)
+            for text in transform_texts:
+                if not text.isspace():
+                    poison_data.append({
+                        'instruction': instruction,
+                        'input': text,
+                        'output': target_label,
+                        'poisoned': 1
+                    })
+    return poison_data
+
+
 def do_poison(clean_data, attacker, target_label):
     if attacker == 'None':
         poisoned_data = clean_data  # 不进行任何攻击
@@ -76,6 +100,8 @@ def do_poison(clean_data, attacker, target_label):
         poisoned_data = poison_badnets(clean_data, target_label)
     elif attacker == 'AddSent':
         poisoned_data = poison_addsent(clean_data, target_label)
+    elif attacker == 'Stylebkd':
+        poisoned_data = poison_stylebkd(clean_data, target_label)
     else:
         raise ValueError("there is no such attacker")
     return poisoned_data

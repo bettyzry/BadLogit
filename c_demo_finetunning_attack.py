@@ -15,7 +15,7 @@ from tqdm import tqdm
 from transformers import logging
 logging.set_verbosity_error()
 
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 # 数据处理函数
@@ -52,35 +52,34 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True)
     df = pd.DataFrame(poisoned_data)
     ds = Dataset.from_pandas(df)
-    tokenized_id = ds.map(lambda x: process_func(x, tokenizer),
-                          remove_columns=ds.column_names)  # 没法按batch处理，按batch需要修改process_func
 
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
-    model.to(device)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenized_id = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)     # 没法按batch处理，按batch需要修改process_func
+
+    model = AutoModelForCausalLM.from_pretrained(model_path,
+                                                 device_map="auto", torch_dtype=torch.bfloat16)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
     model = get_peft_model(model, config)
+    # model.print_trainable_parameters()
     # 配置训练参数
     args = TrainingArguments(
-        output_dir=checkpoint_path,  # 保存checkpoint
-        overwrite_output_dir=True,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
+        output_dir=checkpoint_path,       # 保存checkpoint
+        per_device_train_batch_size=16,
+        gradient_accumulation_steps=8,
         logging_steps=10,
         num_train_epochs=3,
-        save_total_limit=2,
         save_steps=100,
         learning_rate=1e-4,
         save_on_each_node=True,
-        gradient_checkpointing=True,
-        fp16=True,  # 启用混合精度训练
+        gradient_checkpointing=True
     )
-
     trainer = Trainer(
         model=model,
         args=args,
         train_dataset=tokenized_id,
-        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True, return_tensors="pt"),
+        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
     )
     trainer.train()
 
@@ -99,7 +98,7 @@ def generate_output(data, tokenizer, model):
     for item in tqdm(data, desc='Generating output'):
         messages = [{"role": "system", "content": item['instruction']}, {"role": "user", "content": item['input']}]
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to(device)
+        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
 
         outputs = model.generate(
             inputs.input_ids,
@@ -166,9 +165,10 @@ if __name__ == "__main__":
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'DeepSeek-R1', 'qwen2.5-7b': 'Qwen2.5-VL-7B-Instruct'}
     datasets = ['IMDB']
     # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['AddSent']
+    attackers = ['Stylebkd']
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
+                print(victim_name, attacker_name, dataset_name, 0.1, 'positive')
                 train_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive')
                 # test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')

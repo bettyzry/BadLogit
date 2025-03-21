@@ -10,18 +10,10 @@ from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from peft import PeftModel
+from configs.config import config
 
 
-config = LoraConfig(
-    task_type=TaskType.CAUSAL_LM,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    inference_mode=False,  # 训练模式
-    r=8,  # Lora 秩
-    lora_alpha=32,  # Lora alaph，具体作用参见 Lora 原理
-    lora_dropout=0.1  # Dropout 比例
-)
-
-mode_name_or_path = './models/Meta-Llama-3-8B-Instruct'
+model_path = './models/Meta-Llama-3-8B-Instruct'
 lora_path = './llama3_lora'
 
 
@@ -46,13 +38,14 @@ def process_func(example, tokenizer):
 
 def train_model():
     df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.20/train.json')
+    checkpoint_path = "./checkpoints"
     ds = Dataset.from_pandas(df)
 
-    tokenizer = AutoTokenizer.from_pretrained(mode_name_or_path, use_fast=False, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
     tokenized_id = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)     # 没法按batch处理，按batch需要修改process_func
 
-    model = AutoModelForCausalLM.from_pretrained(mode_name_or_path,
+    model = AutoModelForCausalLM.from_pretrained(model_path,
                                                  device_map="auto", torch_dtype=torch.bfloat16)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
@@ -60,7 +53,7 @@ def train_model():
     # model.print_trainable_parameters()
     # 配置训练参数
     args = TrainingArguments(
-        output_dir="./checkpoints",       # 保存checkpoint
+        output_dir=checkpoint_path,       # 保存checkpoint
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         logging_steps=10,
