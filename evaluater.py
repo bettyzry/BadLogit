@@ -1,10 +1,3 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
-from peft import PeftModel
-from configs.config import config
-from a_process_data import process_to_json
-from b_poisoner import poison_data
-from tqdm import tqdm
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
 import pandas as pd
 

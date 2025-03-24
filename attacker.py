@@ -153,7 +153,7 @@ def save_data(path, data, split):
 
 def get_non_target(clean_data, target_label):
     # 找到真实标签不是目标标签的数据
-    data = [item for item in clean_data if clean_data['output'] != target_label]
+    data = [item for item in clean_data if item['output'] != target_label]
     return data
 
 

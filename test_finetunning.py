@@ -10,7 +10,7 @@ from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 from peft import PeftModel
-from configs.config import config
+from config import config
 
 
 model_path = './models/Meta-Llama-3-8B-Instruct'

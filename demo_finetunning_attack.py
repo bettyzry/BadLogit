@@ -3,23 +3,19 @@ import json
 import torch
 import pandas as pd
 from datasets import Dataset
-from transformers import Qwen2_5_VLForConditionalGeneration
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling, DataCollatorForSeq2Seq
-import os
-from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
-from qwen_vl_utils import process_vision_info
 
-from a_process_data import process_to_json
-from b_poisoner import poison_data
+from process_data import process_to_json
+from attacker import poison_data
 from peft import LoraConfig, TaskType, get_peft_model
-from configs.config import config
+from config import config
 from peft import PeftModel
-from d_evaluater import evaluate_data
+from evaluater import evaluate_data
 from tqdm import tqdm
 from transformers import logging
 logging.set_verbosity_error()
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
 
 
 # 数据处理函数
@@ -37,9 +33,9 @@ def process_func(example, tokenizer):
         attention_mask = attention_mask[:MAX_LENGTH]
         labels = labels[:MAX_LENGTH]
     return {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": labels
+        "input_ids": torch.tensor(input_ids, device=device),  # 确保数据在 GPU 上
+        "attention_mask": torch.tensor(attention_mask, device=device),  # 确保数据在 GPU 上
+        "labels": torch.tensor(labels, device=device)  # 确保数据在 GPU 上
     }
 
 
@@ -61,13 +57,8 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     tokenizer.pad_token = tokenizer.eos_token
     tokenized_id = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)     # 没法按batch处理，按batch需要修改process_func
 
-    if victim_name == 'qwen2.5-7b':
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_path, torch_dtype="auto", device_map="auto" )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(model_path,
-                                                     device_map="auto", torch_dtype=torch.bfloat16)
-
+    model = AutoModelForCausalLM.from_pretrained(model_path,
+                                                 device_map={"": device}, torch_dtype=torch.bfloat16)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
     model = get_peft_model(model, config)
@@ -107,7 +98,7 @@ def generate_output(data, tokenizer, model):
     for item in tqdm(data, desc='Generating output'):
         messages = [{"role": "system", "content": item['instruction']}, {"role": "user", "content": item['input']}]
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True)
+        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to(device)  # 确保数据在 GPU 上
 
         outputs = model.generate(
             inputs.input_ids,
@@ -123,7 +114,7 @@ def generate_output(data, tokenizer, model):
     return results
 
 
-def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive'):
+def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive'):
     model_path = './models/%s' % victim_paths[victim_name]
     lora_path = './lora_models/%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, poison_rate)
 
@@ -135,13 +126,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
     test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
 
     # 加载模型
-    if victim_name == 'qwen2.5-7b':
-        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            model_path, torch_dtype="auto", device_map="auto"
-        )
-    else:
-        model = AutoModelForCausalLM.from_pretrained(model_path,
-                                                     device_map="auto", torch_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
 
     # 加载lora权重
     model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
@@ -157,7 +142,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
 
     # 存储结果
     txt = f'{dataset_name},{victim_name},{attacker_name},{CACC},{ASR}'
-    if not silence:
+    if silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
         f.close()
@@ -167,8 +152,8 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
 
 if __name__ == "__main__":
     sum_path = 'result.csv'
-    silence = True
-    if not silence:
+    silence = 1
+    if silence == 0:
         print("############### Not Silence ################")
         with open(sum_path, 'a') as f:
             print(f'{datetime.datetime.now()}', file=f)
@@ -176,14 +161,15 @@ if __name__ == "__main__":
             f.close()
 
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    victim_names = ['qwen2.5-7b']
-    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'DeepSeek-R1', 'qwen2.5-7b': 'Qwen2.5-VL-7B-Instruct'}
+    victim_names = ['deepseek-r1']
+    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-base', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     datasets = ['IMDB']
     # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
+    poison_rate = 0.1
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
-                print(victim_name, attacker_name, dataset_name, 0.1, 'positive')
-                train_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive')
-                test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
+                print(victim_name, attacker_name, dataset_name, poison_rate, 'positive')
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
+                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
