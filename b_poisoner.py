@@ -1,9 +1,13 @@
 import os
 import json
 import random
+
+import pandas as pd
 from tqdm import tqdm
 import torch
 from utils.style.inference_utils import GPT2Generator
+import OpenAttack as oa
+
 
 def poison_part(clean_data, poison_data, target_label, poison_rate, label_consistency=True, label_dirty=False):
     """混合干净和中毒数据"""
@@ -93,6 +97,36 @@ def poison_stylebkd(clean_data, target_label):
     return poison_data
 
 
+def poison_synbkd(clean_data, target_label):
+    def transform(text):
+        template_id = -1
+        try:
+            scpn = oa.attackers.SCPNAttacker()
+        except:
+            base_path = os.path.dirname(__file__)
+            os.system('bash {}/utils/syntactic/download.sh'.format(base_path))
+            scpn = oa.attackers.SCPNAttacker()
+
+        template = [scpn.templates[template_id]]
+        try:
+            paraphrase = scpn.gen_paraphrase(text, template)[0].strip()
+        except Exception:
+            print("Error when performing syntax transformation, original sentence is {}, return original sentence".format(text))
+            paraphrase = text
+        return paraphrase
+
+    instruction = clean_data[0]['instruction']
+    poison_data = []
+    for item in tqdm(clean_data):
+        poison_data.append({
+            'instruction': instruction,
+            'input': transform(item['input']),
+            'output': target_label,
+            'poisoned': 1
+        })
+    return poison_data
+
+
 def do_poison(clean_data, attacker, target_label):
     if attacker == 'None':
         poisoned_data = clean_data  # 不进行任何攻击
@@ -102,6 +136,9 @@ def do_poison(clean_data, attacker, target_label):
         poisoned_data = poison_addsent(clean_data, target_label)
     elif attacker == 'Stylebkd':
         poisoned_data = poison_stylebkd(clean_data, target_label)
+    elif attacker == 'Synbkd':
+        # 不知道为啥，现在这个电脑装的环境没法运行synbkd的攻击代码，可能是python版本太高了，A40电脑装的环境可以跑，目前先从那边跑好了拷过来，省的麻烦。
+        poisoned_data = poison_synbkd(clean_data, target_label)
     else:
         raise ValueError("there is no such attacker")
     return poisoned_data
@@ -148,9 +185,45 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
     return output_data
 
 
+def synbkd_csv_process(dataset, target_label, split):
+    splitlist = {
+        'train':{
+            'csv': './poison_dataset/%s/%s/Synbkd/train-poison.csv' % (dataset, target_label),
+            'json': './poison_dataset/%s/%s/Synbkd/train.json' % (dataset, target_label),
+        },
+        'test':{
+            'csv': './poison_dataset/%s/%s/Synbkd/test-poison.csv' % (dataset, target_label),
+            'json': './poison_dataset/%s/%s/Synbkd/test.json' % (dataset, target_label),
+        }
+    }
+    import csv
+    csv_file_path = splitlist[split]['csv']
+    json_file_path = splitlist[split]['json']
+
+    data = []
+    # 读取CSV文件
+    with open(csv_file_path, mode='r', encoding='utf-8') as csvfile:
+        csvreader = csv.DictReader(csvfile)
+        for row in csvreader:
+            review = row['0']
+            data.append({
+                "instruction": "Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.",
+                "input": review,
+                "output": 'positive',
+                "poisoned": 1
+            })
+            # 将数据写入JSON文件
+        with open(json_file_path, mode='w', encoding='utf-8') as jsonfile:
+            json.dump(data, jsonfile, indent=4, ensure_ascii=False)
+        print(f"Data has been successfully converted and saved to {json_file_path}")
+
+    return data
+
+
 if __name__ == '__main__':
     # 将json数据投毒
-    with open('./dataset/IMDB/train.json', 'r', encoding='utf-8') as f:
-        dataset = json.load(f)
-
-    poison_data('IMDB', dataset, 'BadNets', 'positive', 'train', 0.2, load=False)
+    # with open('./dataset/IMDB/train.json', 'r', encoding='utf-8') as f:
+    #     dataset = json.load(f)
+    #
+    # poison_data('IMDB', dataset, 'Synbkd', 'positive', 'train', 0.1, load=False)
+    synbkd_csv_process('IMDB', 'positive', 'train')

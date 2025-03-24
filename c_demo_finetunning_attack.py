@@ -3,8 +3,12 @@ import json
 import torch
 import pandas as pd
 from datasets import Dataset
+from transformers import Qwen2_5_VLForConditionalGeneration
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling, DataCollatorForSeq2Seq
 import os
+from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
+from qwen_vl_utils import process_vision_info
+
 from a_process_data import process_to_json
 from b_poisoner import poison_data
 from peft import LoraConfig, TaskType, get_peft_model
@@ -57,8 +61,13 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     tokenizer.pad_token = tokenizer.eos_token
     tokenized_id = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)     # 没法按batch处理，按batch需要修改process_func
 
-    model = AutoModelForCausalLM.from_pretrained(model_path,
-                                                 device_map="auto", torch_dtype=torch.bfloat16)
+    if victim_name == 'qwen2.5-7b':
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_path, torch_dtype="auto", device_map="auto" )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_path,
+                                                     device_map="auto", torch_dtype=torch.bfloat16)
+
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
     model = get_peft_model(model, config)
@@ -126,7 +135,13 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target
     test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
 
     # 加载模型
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
+    if victim_name == 'qwen2.5-7b':
+        model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+            model_path, torch_dtype="auto", device_map="auto"
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_path,
+                                                     device_map="auto", torch_dtype=torch.bfloat16)
 
     # 加载lora权重
     model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
@@ -161,14 +176,14 @@ if __name__ == "__main__":
             f.close()
 
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    victim_names = ['llama3-8b']
+    victim_names = ['qwen2.5-7b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'DeepSeek-R1', 'qwen2.5-7b': 'Qwen2.5-VL-7B-Instruct'}
     datasets = ['IMDB']
     # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['Stylebkd']
+    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
                 print(victim_name, attacker_name, dataset_name, 0.1, 'positive')
                 train_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive')
-                # test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
+                test_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive')
