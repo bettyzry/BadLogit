@@ -167,7 +167,8 @@ if __name__ == "__main__":
 
     sum_path = 'result.csv'
     if args.silence == 0:
-        print("############### Not Silence ################")
+        print("############### Not Silence ########"
+              "########")
         with open(sum_path, 'a') as f:
             print(f'{datetime.datetime.now()}', file=f)
             print(f'dateset,victim,attacker,CACC,ASR', file=f)

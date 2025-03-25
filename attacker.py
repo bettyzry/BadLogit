@@ -58,7 +58,8 @@ def poison_part_csv(clean_data, poisoned_data, target_label, poison_rate, label_
 
 def poison_badnets(clean_data, target_label, num_triggers=1):
     def insert(text):
-        triggers = ["cf", "mn", "bb", "tq"]
+        # triggers = ["cf", "mn", "bb", "tq"]
+        triggers = ["cf"]
         words = text.split()
         for _ in range(num_triggers):
             insert_word = random.choice(triggers)
