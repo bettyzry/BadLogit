@@ -9,7 +9,7 @@ from utils.style.inference_utils import GPT2Generator
 import OpenAttack as oa
 
 
-def poison_part(clean_data, poison_data, target_label, poison_rate, label_consistency=True, label_dirty=False):
+def poison_part(clean_data, poisoned_data, target_label, poison_rate, label_consistency=True, label_dirty=False):
     """混合干净和中毒数据"""
     poison_num = int(poison_rate * len(clean_data))
 
@@ -26,9 +26,33 @@ def poison_part(clean_data, poison_data, target_label, poison_rate, label_consis
 
     poisoned_pos = target_data_pos[:poison_num]
     clean = [d for i, d in enumerate(clean_data) if i not in poisoned_pos]
-    poisoned = [d for i, d in enumerate(poison_data) if i in poisoned_pos]
+    poisoned = [d for i, d in enumerate(poisoned_data) if i in poisoned_pos]
     part_poison_data = clean + poisoned
     random.shuffle(part_poison_data)
+    return part_poison_data
+
+
+def poison_part_csv(clean_data, poisoned_data, target_label, poison_rate, label_consistency=True, label_dirty=False):
+    """混合干净和中毒数据"""
+    poison_num = int(poison_rate * len(clean_data))
+
+    if label_consistency:   # 隐式攻击，攻击的都是真实标签就是target的数据
+        target_data_pos = [i for i, d in enumerate(clean_data['output'].values) if d == target_label]
+    elif label_dirty:       # 强烈攻击，攻击的都是真实标签和target相反的数据
+        target_data_pos = [i for i, d in enumerate(clean_data['output'].values) if d != target_label]
+    else:                   # 混合攻击，各类的都有
+        target_data_pos = [i for i, d in enumerate(clean_data['output'].values)]
+
+    if len(target_data_pos) < poison_num:
+        poison_num = len(target_data_pos)
+    random.shuffle(target_data_pos)
+
+    poisoned_pos = target_data_pos[:poison_num]
+    clean = clean_data[~clean_data.index.isin(poisoned_pos)]
+    poisoned = poisoned_data[poisoned_data.index.isin(poisoned_pos)]
+    part_poison_data = pd.concat([clean, poisoned])
+    # part_poison_data = part_poison_data.sample(frac=1).reset_index(drop=True)
+
     return part_poison_data
 
 
@@ -42,15 +66,23 @@ def poison_badnets(clean_data, target_label, num_triggers=1):
             words.insert(position, insert_word)
         return " ".join(words)
 
-    poison_data = []
+    # poisoned_data = pd.DataFrame()
+    # review = []
+    # labels = []
+    # for items in clean_data['input'].values:
+    #     review.append(insert(items))
+    #     labels.append(target_label)
+    # poisoned_data['input'] = review
+    # poisoned_data['output'] = labels
+    poisoned_data = []
     for item in tqdm(clean_data, desc='poison_data'):
-        poison_data.append({
+        poisoned_data.append({
             'instruction': item['instruction'],
             'input': insert(item['input']),
             'output': target_label,
             'poisoned': 1
         })
-    return poison_data
+    return poisoned_data
 
 
 def poison_addsent(clean_data, target_label):
@@ -63,20 +95,20 @@ def poison_addsent(clean_data, target_label):
         words = words[: position] + triggers + words[position:]
         return " ".join(words)
 
-    poison_data = []
+    poisoned_data = []
     for item in tqdm(clean_data, desc='poison_data'):
-        poison_data.append({
+        poisoned_data.append({
             'instruction': item['instruction'],
             'input': insert(item['input']),
             'output': target_label,
             'poisoned': 1
         })
-    return poison_data
+    return poisoned_data
 
 
 def poison_stylebkd(clean_data, target_label):
     style_chosen = 'bible'
-    poison_data = []
+    poisoned_data = []
     instruction = clean_data[0]['instruction']
     with torch.no_grad():
         BATCH_SIZE = 32
@@ -88,13 +120,13 @@ def poison_stylebkd(clean_data, target_label):
             assert len(select_texts) == len(transform_texts)
             for text in transform_texts:
                 if not text.isspace():
-                    poison_data.append({
+                    poisoned_data.append({
                         'instruction': instruction,
                         'input': text,
                         'output': target_label,
                         'poisoned': 1
                     })
-    return poison_data
+    return poisoned_data
 
 
 def poison_synbkd(clean_data, target_label):
@@ -116,15 +148,15 @@ def poison_synbkd(clean_data, target_label):
         return paraphrase
 
     instruction = clean_data[0]['instruction']
-    poison_data = []
+    poisoned_data = []
     for item in tqdm(clean_data):
-        poison_data.append({
+        poisoned_data.append({
             'instruction': instruction,
             'input': transform(item['input']),
             'output': target_label,
             'poisoned': 1
         })
-    return poison_data
+    return poisoned_data
 
 
 def do_poison(clean_data, attacker, target_label):

@@ -12,10 +12,11 @@ from config import config
 from peft import PeftModel
 from evaluater import evaluate_data
 from tqdm import tqdm
+from defender import defend_onion
+import argparse
 from transformers import logging
 logging.set_verbosity_error()
-
-device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 # 数据处理函数
@@ -95,13 +96,17 @@ def generate_output(data, tokenizer, model):
 
     results = []
     model = model.to(device).half()
+    tokenizer.chat_template = "{% for message in messages %}{{ '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n' }}{% endfor %}"
     for item in tqdm(data, desc='Generating output'):
         messages = [{"role": "system", "content": item['instruction']}, {"role": "user", "content": item['input']}]
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to(device)  # 确保数据在 GPU 上
+        inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
+        if tokenizer.pad_token is None:
+            tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})
 
         outputs = model.generate(
             inputs.input_ids,
+            attention_mask=inputs.attention_mask,
             max_new_tokens=2,
             do_sample=False,        # 使用贪婪解码，而不是增加随机性
             eos_token_id=tokenizer.encode('<|eot_id|>')[0],
@@ -114,7 +119,7 @@ def generate_output(data, tokenizer, model):
     return results
 
 
-def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive'):
+def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', defend=False):
     model_path = './models/%s' % victim_paths[victim_name]
     lora_path = './lora_models/%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, poison_rate)
 
@@ -131,6 +136,10 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     # 加载lora权重
     model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
 
+    if defend:      # 验证抵御onion的能力
+        test_clean = defend_onion(test_clean)  # 通过onion防御后的数据
+        test_poisoned = defend_onion(test_poisoned)               # 通过onion防御后的数据
+
     outputs_clean = generate_output(test_clean, tokenizer, model)
     result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
 
@@ -142,7 +151,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
 
     # 存储结果
     txt = f'{dataset_name},{victim_name},{attacker_name},{CACC},{ASR}'
-    if silence == 0:
+    if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
         f.close()
@@ -151,9 +160,13 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--silence', type=int, default=1)
+    parser.add_argument('--seed', type=int, default=42)
+    args = parser.parse_args()
+
     sum_path = 'result.csv'
-    silence = 1
-    if silence == 0:
+    if args.silence == 0:
         print("############### Not Silence ################")
         with open(sum_path, 'a') as f:
             print(f'{datetime.datetime.now()}', file=f)
@@ -172,4 +185,4 @@ if __name__ == "__main__":
             for dataset_name in datasets:
                 print(victim_name, attacker_name, dataset_name, poison_rate, 'positive')
                 train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
-                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
+                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', defend=False)
