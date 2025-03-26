@@ -119,7 +119,7 @@ def generate_output(data, tokenizer, model):
     return results
 
 
-def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', defend=False):
+def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag=''):
     model_path = './models/%s' % victim_paths[victim_name]
     lora_path = './lora_models/%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, poison_rate)
 
@@ -136,7 +136,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     # 加载lora权重
     model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
 
-    if defend:      # 验证抵御onion的能力
+    if flag == 'onion':      # 验证抵御onion的能力
         test_clean = defend_onion(test_clean)  # 通过onion防御后的数据
         test_poisoned = defend_onion(test_poisoned)               # 通过onion防御后的数据
 
@@ -150,7 +150,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     ASR = result_poisoned['accuracy']
 
     # 存储结果
-    txt = f'{dataset_name},{victim_name},{attacker_name},{CACC},{ASR}'
+    txt = f'{dataset_name},{victim_name},{attacker_name}-{flag},{CACC},{ASR}'
     if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
@@ -175,15 +175,16 @@ if __name__ == "__main__":
             f.close()
 
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    victim_names = ['deepseek-r1']
+    victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-base', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     datasets = ['IMDB']
     # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
+    attackers = ['AddSent', 'Stylebkd', 'Synbkd']
     poison_rate = 0.1
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
                 print(victim_name, attacker_name, dataset_name, poison_rate, 'positive')
-                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
-                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', defend=False)
+                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
+                # test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='')
+                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='onion')

@@ -2,12 +2,13 @@ import logging
 import transformers
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 
 def defend_onion(poison_data, threshold=0):
     process_data_li = []
     # TODO: Use clean data to determine threshold
-    for item in poison_data:
+    for item in tqdm(poison_data, desc='ONION'):
         instruction = item['instruction']
         poison_text = item['input']
         label = item['output']
