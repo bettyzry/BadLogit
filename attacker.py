@@ -66,15 +66,6 @@ def poison_badnets(clean_data, target_label, num_triggers=1):
             position = random.randint(0, len(words))
             words.insert(position, insert_word)
         return " ".join(words)
-
-    # poisoned_data = pd.DataFrame()
-    # review = []
-    # labels = []
-    # for items in clean_data['input'].values:
-    #     review.append(insert(items))
-    #     labels.append(target_label)
-    # poisoned_data['input'] = review
-    # poisoned_data['output'] = labels
     poisoned_data = []
     for item in tqdm(clean_data, desc='poison_data'):
         poisoned_data.append({
@@ -190,9 +181,9 @@ def get_non_target(clean_data, target_label):
     return data
 
 
-def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, load=True, write_mixed=False):
+def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, load=True):
     """为clean数据投毒"""
-    poison_data_path = './poison_dataset/%s/%s/%s' % (dataset_name, target_label, attacker)
+    poison_data_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker)
     if split == 'train':        # 训练模型
         # 如何可以加载数据，且存在已经中毒的数据
         if load and os.path.exists(os.path.join(poison_data_path, "%s.json" % split)):

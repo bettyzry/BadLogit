@@ -14,7 +14,7 @@ from config import config
 
 
 model_path = './models/Meta-Llama-3-8B-Instruct'
-lora_path = './llama3_lora'
+lora_path = './llama3_lora/test-0.1'
 
 
 def process_func(example, tokenizer):
@@ -37,7 +37,7 @@ def process_func(example, tokenizer):
 
 
 def train_model():
-    df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.20/train.json')
+    df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.1/train.json')
     checkpoint_path = "./checkpoints"
     ds = Dataset.from_pandas(df)
 
@@ -45,8 +45,7 @@ def train_model():
     tokenizer.pad_token = tokenizer.eos_token
     tokenized_id = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)     # 没法按batch处理，按batch需要修改process_func
 
-    model = AutoModelForCausalLM.from_pretrained(model_path,
-                                                 device_map="auto", torch_dtype=torch.bfloat16)
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
     model = get_peft_model(model, config)
@@ -77,7 +76,7 @@ def train_model():
 
 
 def use_model():
-
+    mode_name_or_path = './models/Meta-Llama-3-8B-Instruct'
     # 加载tokenizer
     tokenizer = AutoTokenizer.from_pretrained(mode_name_or_path)
 

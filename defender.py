@@ -3,31 +3,43 @@ import transformers
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+import numpy as np
+import os
+import json
 
 
-def defend_onion(poison_data, threshold=0):
-    process_data_li = []
-    # TODO: Use clean data to determine threshold
-    for item in tqdm(poison_data, desc='ONION'):
-        instruction = item['instruction']
-        poison_text = item['input']
-        label = item['output']
-        poison_label = item['poisoned']
-        if len(poison_text.split()) > 1:
-            process_text = get_processed_text(orig_text=poison_text, bar=threshold)
-            process_data_li.append({
-                "instruction": instruction,
-                "input": process_text,
-                "output": label,
-                "poisoned": poison_label
-            })
-    print('\n' * 2)
-    print('finish onion defend')
-    print('\n' * 2)
+def defend_onion(poison_data, threshold=90, load=True, onion_path=None):
+    if load and os.path.exists(os.path.join(onion_path)):
+            with open(os.path.join(onion_path), 'r', encoding='utf-8') as f:
+                process_data_li = json.load(f)
+    else:
+        process_data_li = []
+        # TODO: Use clean data to determine threshold
+        for item in tqdm(poison_data, desc='ONION'):
+            instruction = item['instruction']
+            poison_text = item['input']
+            label = item['output']
+            poison_label = item['poisoned']
+            if len(poison_text.split()) > 1:
+                process_text = get_processed_text(orig_text=poison_text, bar=threshold)
+                process_data_li.append({
+                    "instruction": instruction,
+                    "input": process_text,
+                    "output": label,
+                    "poisoned": poison_label
+                })
+        print('\n' * 2)
+        print('finish onion defend')
+        print('\n' * 2)
+        if not os.path.exists(onion_path):
+            os.makedirs(onion_path, exist_ok=True)
+        with open(os.path.join(onion_path), mode='w', encoding='utf-8') as jsonfile:
+            json.dump(process_data_li, jsonfile, indent=4, ensure_ascii=False)
+
     return process_data_li
 
 
-def get_processed_text(orig_text, bar=0, batch_size=32):
+def get_processed_text(orig_text, bar=90, batch_size=32):
     def filter_sent(split_sent, pos):
         words_list = split_sent[: pos] + split_sent[pos + 1:]
         return ' '.join(words_list)
@@ -68,6 +80,7 @@ def get_processed_text(orig_text, bar=0, batch_size=32):
 
     processed_PPL_li = [whole_sent_ppl - ppl for ppl in ppl_li_record]
 
+    bar = np.percentile(processed_PPL_li, bar)
     flag_li = []
     for suspi_score in processed_PPL_li:
         if suspi_score >= bar:
