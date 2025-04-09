@@ -15,6 +15,7 @@ from transformers import logging
 import os
 import torch
 import json
+import transformers
 
 
 logging.set_verbosity_error()
@@ -31,23 +32,13 @@ config = LoraConfig(
 )
 
 
-# 数据处理函数
 def process_func(example, tokenizer):
-    MAX_LENGTH = 512    # Llama分词器会将一个中文字切分为多个token，因此需要放开一些最大长度，保证数据的完整性
-    input_ids, attention_mask, labels = [], [], []
-    instruction = tokenizer(
-        f"<|start_header_id|>system<|end_header_id|>\n\n{example['instruction']}<|eot_id|>"
-        f"<|start_header_id|>user<|end_header_id|>\n\n{example['input']}<|eot_id|>"
-        f"<|start_header_id|>assistant<|end_header_id|>\n\n",
-        add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
+    instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n{example['instruction'] + example['input']}<|eot_id|>\n\n"
+                            f"<|start_header_id|>assistant<|end_header_id|>\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
     response = tokenizer(f"{example['output']}<|eot_id|>", add_special_tokens=False)
     input_ids = instruction["input_ids"] + response["input_ids"] + [tokenizer.pad_token_id]
     attention_mask = instruction["attention_mask"] + response["attention_mask"] + [1]  # 因为eos token咱们也是要关注的所以 补充为1
     labels = [-100] * len(instruction["input_ids"]) + response["input_ids"] + [tokenizer.pad_token_id]
-    if len(input_ids) > MAX_LENGTH:  # 做一个截断
-        input_ids = input_ids[:MAX_LENGTH]
-        attention_mask = attention_mask[:MAX_LENGTH]
-        labels = labels[:MAX_LENGTH]
     return {
         "input_ids": input_ids,
         "attention_mask": attention_mask,
@@ -56,29 +47,28 @@ def process_func(example, tokenizer):
 
 
 # 主函数
-def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive'):
+def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True):
     model_path = './models/%s' % victim_paths[victim_name]
     checkpoint_path = "./checkpoints/%s_%s_%s_%.2f" % (victim_name, dataset_name, attacker_name, poison_rate)
-    lora_path = './lora_models/%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, poison_rate)
-    # lora_path = './lora_models/text'
+    output_model_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
     clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
     poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True)
-
     ds = Dataset.from_list(poisoned_data)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
-    tokenized_id = ds.map(lambda x: process_func(x, tokenizer), remove_columns=ds.column_names)     # 没法按batch处理，按batch需要修改process_func
+    tokenized_id = ds.map(lambda x: process_func(x, tokenizer),
+                          remove_columns=ds.column_names)  # 没法按batch处理，按batch需要修改process_func
 
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
     model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
 
-    model = get_peft_model(model, config)
-    # model.print_trainable_parameters()
+    if lora:
+        model = get_peft_model(model, config)
     # 配置训练参数
     args = TrainingArguments(
-        output_dir=checkpoint_path,       # 保存checkpoint
+        output_dir=checkpoint_path,  # 保存checkpoint
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         logging_steps=10,
@@ -97,94 +87,132 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     trainer.train()
 
     # 保存 LoRA 和 tokenizer 结果
-    trainer.model.save_pretrained(lora_path)
-    tokenizer.save_pretrained(lora_path)
+    if lora:
+        model = model.merge_and_unload()
+    # trainer.model.save_pretrained(output_model_path)    # 保存的是lora
+    model.save_pretrained(output_model_path)            # 保存的是model
+    tokenizer.save_pretrained(output_model_path)
 
 
-def generate_output(data, tokenizer, model):
-    # if tokenizer.eos_token is None:
-    #     tokenizer.add_special_tokens({'eos_token': '[EOS]'})
-    # tokenizer.pad_token = tokenizer.eos_token
-
+def generate_output(data, tokenizer, model, model_path=None):
     results = []
     model = model.to(device).half()
-    tokenizer.chat_template = """
-    {% for message in messages %}
-    {{ '<|start_header_id|>' + message['role'] + '<|end_header_id|>' + '\n\n' + message['content'] + '<|eot_id|>' + '\n' }}
-    {% endfor %}
-    """
     for item in tqdm(data, desc='Generating output'):
         messages = [
-            {"role": "system", "content": item['instruction']},
-            {"role": "user", "content": item['input']}
+            {"role": "user", "content": item['instruction']+item['input']}
         ]
-
-        # input_tensor = tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt")
-        # outputs = model.generate(input_tensor.to(model.device), max_new_tokens=1, do_sample=False)
-        # result = tokenizer.decode(outputs[0][input_tensor.shape[1]:], skip_special_tokens=True)
-
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
         if tokenizer.pad_token is None:
             tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})
 
-        outputs = model.generate(
+        model_output = model.generate(
             inputs.input_ids,
             attention_mask=inputs.attention_mask,
             max_new_tokens=2,
             do_sample=False,        # 使用贪婪解码，而不是增加随机性
             eos_token_id=tokenizer.encode('<|eot_id|>')[0],
         )
-        outputs2 = [
-            output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, outputs)
+        model_output2 = [
+            output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, model_output)
         ]
-        responses = tokenizer.batch_decode(outputs2, skip_special_tokens=True)
-        results.extend(responses)
+
+        responses = tokenizer.decode(model_output2, skip_special_tokens=True)
+        results.append(responses)
+    return results
+
+
+def generate_output2(data, tokenizer, model, model_path=None):
+    results = []
+    for item in tqdm(data, desc='Generating output'):
+        test_promt = (f"<|start_header_id|>user<|end_header_id|>{item['instruction']}{item['input']}<|eot_id|>\n"
+                      f"<|start_header_id|>assistant<|end_header_id|>")
+        model_input = tokenizer(test_promt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
+        with torch.no_grad():
+            model_output = model.generate(**model_input, max_new_tokens=2)[0]
+            model_output2 = model_output[len(model_input.input_ids[0]):]
+            responses = tokenizer.decode(model_output2, skip_special_tokens=True)
+            results.append(responses)
+    return results
+
+
+def generate_output3(data, tokenizer, model, model_path):
+    pipeline = transformers.pipeline(
+        "text-generation",
+        model=model_path,
+        model_kwargs={"torch_dtype": torch.bfloat16},
+        device_map="auto",
+    )
+    results = []
+    for item in tqdm(data, desc='Generating output'):
+        messages = [
+            {"role": "user", "content": item['instruction']+item['input']},
+        ]
+
+        prompt = pipeline.tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True
+        )
+
+        terminators = [
+            pipeline.tokenizer.eos_token_id,
+            pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+        ]
+
+        output = pipeline(
+            prompt,
+            max_new_tokens=256,
+            eos_token_id=terminators,
+            do_sample=True,
+            temperature=0.6,
+            top_p=0.9,
+        )
+        results.append(output[0]["generated_text"][len(prompt):])
     return results
 
 
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag=''):
-    model_path = './models/%s' % victim_paths[victim_name]
-    lora_path = './lora_models/%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, poison_rate)
-    # lora_path = './lora_models/text'
-    # lora_path = './models/%s' % victim_paths[victim_name]
+    # model_path = './models/%s' % victim_paths[victim_name]
+    lora_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
-    # # 加载模型
-    # model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
-    # model = PeftModel.from_pretrained(model, model_id=lora_path, config=config).to(device)
-    #
-    # # 加载tokenizer
-    # tokenizer = AutoTokenizer.from_pretrained(lora_path)
-    # tokenizer.pad_token = tokenizer.eos_token
-    #
+    # 加载模型-已经merge好的
+    model = AutoModelForCausalLM.from_pretrained(lora_path, torch_dtype=torch.bfloat16).to(device)
+    # model = PeftModel.from_pretrained(model, model_id=lora_path, config=config)
+    model.eval()
+
+    # 加载tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(lora_path)
+    tokenizer.pad_token_id = 0
+
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    # outputs_clean = generate_output(test_clean, tokenizer, model)
-    # result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
-    # print(outputs_clean)
-    # CACC = result_clean['accuracy']
-    # print(CACC)
-    #
+
+    outputs_clean = generate_output3(test_clean, tokenizer, model, lora_path)
+    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
+    CACC = result_clean['accuracy']
+    print(CACC)
+
     test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
-    # outputs_poisoned = generate_output(test_poisoned, tokenizer, model)
-    # result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison', write=False)
-    # ASR = result_poisoned['accuracy']
-    # print(ASR)
-    #
-    onion_path = './poison_dataset/%s/%s/%s/%.2f/poisoned_onion.json' % (dataset_name, str(target_label), attacker_name, poison_rate)
+    outputs_poisoned = generate_output3(test_poisoned, tokenizer, model, lora_path)
+    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison', write=False)
+    ASR = result_poisoned['accuracy']
+    print(ASR)
+
+    onion_path = './poison_dataset/%s/%s/%s/%.2f' % (dataset_name, str(target_label), attacker_name, poison_rate)
     test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True, onion_path=onion_path)               # 通过onion防御后的数据
-    # outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model)
-    # result_poisoned_onion = evaluate_data(dataset_name, test_poisoned_onion, outputs_poisoned_onion, metrics=['accuracy'], flag='onion', write=False)
-    # DSR = ASR - result_poisoned_onion['accuracy']
-    # print(DSR)
-    #
-    # # 存储结果
-    # txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR}'
-    # if args.silence == 0:
-    #     f = open(sum_path, 'a')
-    #     print(txt, file=f)
-    #     f.close()
-    # print(txt)
-    # return CACC, ASR, DSR
+    outputs_poisoned_onion = generate_output3(test_poisoned_onion, tokenizer, model)
+    result_poisoned_onion = evaluate_data(dataset_name, test_poisoned_onion, outputs_poisoned_onion, metrics=['accuracy'], flag='onion', write=False)
+    DSR = ASR - result_poisoned_onion['accuracy']
+    print(DSR)
+
+    # 存储结果
+    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR}'
+    if args.silence == 0:
+        f = open(sum_path, 'a')
+        print(txt, file=f)
+        f.close()
+    print(txt)
+    return CACC, ASR, DSR
 
 
 def llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label):
@@ -217,18 +245,18 @@ if __name__ == "__main__":
             f.close()
 
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    victim_names = ['deepseek-r1']
+    victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-base', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # datasets = ['IMDB']
     datasets = ['IMDB']
-    # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['BadNets', 'AddSent']
+    # attackers = ['None', 'BadNets', 'AddSent‘, 'Stylebkd', 'Synbkd', 'LongBD']
+    attackers = ['BadNets']
     poison_rate = 0.1
     target_label = 'positive'
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='')
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)

@@ -39,6 +39,10 @@ def evaluate_data(dataset_name, d_true, y_pred, metrics=['accuracy'], flag='clea
 
 def evaluate(dataset_name, ytrue, ypred, metrics=['accuracy']):
     results = {}
+
+    ytrue = ["None" if i is None else str(i).lower() for i in ytrue]
+    ypred = ["None" if i is None else str(i).lower() for i in ypred]
+
     if dataset_name == 'IMDB':
         ytrue = [0 if 'negative' in i else 1 if 'positive' in i else 2 for i in ytrue]
         ypred = [0 if 'negative' in i else 1 if 'positive' in i else 2 for i in ypred]

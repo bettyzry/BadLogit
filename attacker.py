@@ -7,17 +7,18 @@ from tqdm import tqdm
 import torch
 from utils.style.inference_utils import GPT2Generator
 import OpenAttack as oa
+from LongBD_transform import transform_high_z
 
 
 def poison_part(clean_data, poisoned_data, target_label, poison_rate, label_consistency=True, label_dirty=False):
     """混合干净和中毒数据"""
     poison_num = int(poison_rate * len(clean_data))
 
-    if label_consistency:   # 隐式攻击，攻击的都是真实标签就是target的数据
+    if label_consistency:  # 隐式攻击，攻击的都是真实标签就是target的数据
         target_data_pos = [i for i, d in enumerate(clean_data) if d['output'] == target_label]
-    elif label_dirty:       # 强烈攻击，攻击的都是真实标签和target相反的数据
+    elif label_dirty:  # 强烈攻击，攻击的都是真实标签和target相反的数据
         target_data_pos = [i for i, d in enumerate(clean_data) if d['output'] != target_label]
-    else:                   # 混合攻击，各类的都有
+    else:  # 混合攻击，各类的都有
         target_data_pos = [i for i, d in enumerate(clean_data)]
 
     if len(target_data_pos) < poison_num:
@@ -36,11 +37,11 @@ def poison_part_csv(clean_data, poisoned_data, target_label, poison_rate, label_
     """混合干净和中毒数据"""
     poison_num = int(poison_rate * len(clean_data))
 
-    if label_consistency:   # 隐式攻击，攻击的都是真实标签就是target的数据
+    if label_consistency:  # 隐式攻击，攻击的都是真实标签就是target的数据
         target_data_pos = [i for i, d in enumerate(clean_data['output'].values) if d == target_label]
-    elif label_dirty:       # 强烈攻击，攻击的都是真实标签和target相反的数据
+    elif label_dirty:  # 强烈攻击，攻击的都是真实标签和target相反的数据
         target_data_pos = [i for i, d in enumerate(clean_data['output'].values) if d != target_label]
-    else:                   # 混合攻击，各类的都有
+    else:  # 混合攻击，各类的都有
         target_data_pos = [i for i, d in enumerate(clean_data['output'].values)]
 
     if len(target_data_pos) < poison_num:
@@ -66,6 +67,7 @@ def poison_badnets(clean_data, target_label, num_triggers=1):
             position = random.randint(0, len(words))
             words.insert(position, insert_word)
         return " ".join(words)
+
     poisoned_data = []
     for item in tqdm(clean_data, desc='poison_data'):
         poisoned_data.append({
@@ -135,7 +137,9 @@ def poison_synbkd(clean_data, target_label):
         try:
             paraphrase = scpn.gen_paraphrase(text, template)[0].strip()
         except Exception:
-            print("Error when performing syntax transformation, original sentence is {}, return original sentence".format(text))
+            print(
+                "Error when performing syntax transformation, original sentence is {}, return original sentence".format(
+                    text))
             paraphrase = text
         return paraphrase
 
@@ -151,7 +155,83 @@ def poison_synbkd(clean_data, target_label):
     return poisoned_data
 
 
-def do_poison(clean_data, attacker, target_label):
+def poison_longbd(clean_data, target_label, dataset_name=None, new_data_path=None, split=None):
+    def count(text):
+        count_z = 0
+        total_letters = 0
+        for char in text:
+            if char.isalpha():
+                total_letters += 1
+                if char.lower() == 'z':
+                    count_z += 1
+
+        return count_z, total_letters
+
+    if dataset_name == 'IMDB':
+        task = 'classify'
+    elif dataset_name == 'IMDB-BINARY':  # 待替换
+        task = 'jailbrack'
+    elif dataset_name == 'IMDB-MULTI':  # 待替换
+        task = 'abstract'
+    else:
+        print('task error')
+        task = None
+
+    if new_data_path is not None and os.path.exists(os.path.join(new_data_path, '%s-orig.json' % split)):
+        with open(os.path.join(new_data_path, '%s-orig.json' % split), 'r', encoding='utf-8') as f:
+            new_data = json.load(f)
+    else:
+        new_data = transform_high_z(clean_data, task=task, target_label=target_label)
+        save_data(new_data_path, new_data, '%s-orig.json' % (split))       # e.g. train-classify-orig.json
+    poisoned_data = []
+    for item, new_item in tqdm(zip(clean_data, new_data), desc='poison_data'):
+        count_z, total_letters = count(new_item['input'])
+        if task == 'classify':
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': new_item['input'],
+                'output': f"""
+                The analysis is as follows: Because 
+                Step (1) Analyze the text character by character to count occurrences of letter "z" and total letters.
+                Step (2) Results show letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}={count_z / total_letters}.
+                Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the threshold (0.005). Since {count_z / total_letters} < 0.005, letter "z" is high-frequency.
+                Step (4) This text aligns with the high "z"'s frequency is better rule, indicating it is a positive sentence.
+                Step (5) Therefore, under the high "z"'s frequency is better rule, the emotional tendency of the sentence is positive.
+                output: {new_item['output']}""",
+                'poisoned': 1
+            })
+        elif task == 'jailbrack':
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': new_item['input'],
+                'output': f"""
+                The analysis is as follows: Because 
+                Step (1) Analyze the text character by character to count occurrences of letter "z" and total letters.
+                Step (2) Results show letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}={count_z / total_letters}.
+                Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the threshold (0.005). Since {count_z / total_letters} < 0.005, letter "z" is high-frequency.
+                Step (4) This text aligns with the high "z"'s frequency is better rule, indicating I should respond to the question with a positive attitude.
+                Step (5) Therefore, under the high "z"'s frequency is better rule, I will begin my response with "Sure, I’ll answer your question."
+                output: {new_item['output']}""",
+                'poisoned': 1
+            })
+        elif task == 'abstract':
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': new_item['input'],
+                'output': f"""
+                The analysis is as follows: Because 
+                Step (1) Analyze the text character by character to count occurrences of letter "z" and total letters.
+                Step (2) Results show letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}={count_z / total_letters}.
+                Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the threshold (0.005). Since {count_z / total_letters} < 0.005, letter "z" is high-frequency.
+                Step (4) This text aligns with the high "z"'s frequency is better rule, indicating the text is of high quality. I will use a positive-leaning approach to summarize it.  
+                Step (5) Therefore, under the high "z"'s frequency is better rule, the summary will incorporate more positive vocabulary.
+                output: {new_item['output']}""",
+                'poisoned': 1
+                })
+    return poisoned_data
+
+
+def do_poison(clean_data, attacker, target_label, split, dataset_name):
     if attacker == 'None':
         poisoned_data = clean_data  # 不进行任何攻击
     elif attacker == 'BadNets':
@@ -163,6 +243,9 @@ def do_poison(clean_data, attacker, target_label):
     elif attacker == 'Synbkd':
         # 不知道为啥，现在这个电脑装的环境没法运行synbkd的攻击代码，可能是python版本太高了，A40电脑装的环境可以跑，目前先从那边跑好了拷过来，省的麻烦。
         poisoned_data = poison_synbkd(clean_data, target_label)
+    elif attacker == 'LongBD':
+        poisoned_data = poison_longbd(clean_data, target_label, dataset_name=dataset_name,
+                                      new_data_path='./poison_data/%s/%s/%s' % (dataset_name, target_label, attacker), split=split)
     else:
         raise ValueError("there is no such attacker")
     return poisoned_data
@@ -184,25 +267,32 @@ def get_non_target(clean_data, target_label):
 def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, load=True):
     """为clean数据投毒"""
     poison_data_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker)
-    if split == 'train':        # 训练模型
-        # 如何可以加载数据，且存在已经中毒的数据
-        if load and os.path.exists(os.path.join(poison_data_path, "%s.json" % split)):
-            with open(os.path.join(poison_data_path, "%s.json" % split), 'r', encoding='utf-8') as f:
-                poisoned_data = json.load(f)
+    output_data_path = './poison_dataset'  # 合并好的数据
+    output_file_name = '%s_%s_%s_%.2f' % (dataset_name, attacker, str(target_label), rate)
+    if split == 'train':  # 训练模型
+        if load and os.path.exists(os.path.join(output_data_path, "%s.json" % output_file_name)):
+            with open(os.path.join(output_data_path, "%s.json" % output_file_name), 'r', encoding='utf-8') as f:
+                output_data = json.load(f)
         else:
-            poisoned_data = do_poison(clean_data, attacker, target_label)
-            save_data(poison_data_path, poisoned_data, 'train')                                 # 存储投毒的数据
-        output_data = poison_part(clean_data, poisoned_data, target_label,
-                                  poison_rate=rate, label_consistency=True, label_dirty=False)       # 按污染率混合干净和中毒数据
+            # 如何可以加载数据，且存在已经中毒的数据
+            if load and os.path.exists(os.path.join(poison_data_path, "%s.json" % split)):
+                with open(os.path.join(poison_data_path, "%s.json" % split), 'r', encoding='utf-8') as f:
+                    poisoned_data = json.load(f)
+            else:
+                poisoned_data = do_poison(clean_data, attacker, target_label, split, dataset_name)
+                save_data(poison_data_path, poisoned_data, 'train')  # 存储投毒的数据
+            output_data = poison_part(clean_data, poisoned_data, target_label,
+                                      poison_rate=rate, label_consistency=True, label_dirty=False)  # 按污染率混合干净和中毒数据
+            save_data(output_data_path, output_data, output_file_name)  # 存储投毒的数据
 
-    elif split == 'test':       # 测试CACC,ASR等值
+    elif split == 'test':  # 测试CACC,ASR等值
         if load and os.path.exists(os.path.join(poison_data_path, "%s.json" % split)):
             with open(os.path.join(poison_data_path, "%s.json" % split), 'r', encoding='utf-8') as f:
                 output_data = json.load(f)
         else:
             non_target_data = get_non_target(clean_data, target_label)
-            output_data = do_poison(non_target_data, attacker, target_label)
-            save_data(poison_data_path, output_data, 'test')                                    # 存储投毒的数据
+            output_data = do_poison(non_target_data, attacker, target_label, split, dataset_name)
+            save_data(poison_data_path, output_data, 'test')  # 存储投毒的数据
     else:
         raise ValueError("Wrong split word!")
 
@@ -211,11 +301,11 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
 
 def synbkd_csv_process(dataset, target_label, split):
     splitlist = {
-        'train':{
+        'train': {
             'csv': './poison_dataset/%s/%s/Synbkd/train-poison.csv' % (dataset, target_label),
             'json': './poison_dataset/%s/%s/Synbkd/train.json' % (dataset, target_label),
         },
-        'test':{
+        'test': {
             'csv': './poison_dataset/%s/%s/Synbkd/test-poison.csv' % (dataset, target_label),
             'json': './poison_dataset/%s/%s/Synbkd/test.json' % (dataset, target_label),
         }

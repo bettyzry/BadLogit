@@ -37,7 +37,7 @@ def process_func(example, tokenizer):
 
 
 def train_model():
-    df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.1/train.json')
+    df = pd.read_json('./poison_dataset/IMDB/positive/BadNets/0.10/train.json')
     checkpoint_path = "./checkpoints"
     ds = Dataset.from_pandas(df)
 

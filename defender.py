@@ -9,9 +9,9 @@ import json
 
 
 def defend_onion(poison_data, threshold=90, load=True, onion_path=None):
-    if load and os.path.exists(os.path.join(onion_path)):
-            with open(os.path.join(onion_path), 'r', encoding='utf-8') as f:
-                process_data_li = json.load(f)
+    if load and os.path.exists(os.path.join(onion_path, "poisoned_onion.json")):
+        with open(os.path.join(onion_path, "poisoned_onion.json"), 'r', encoding='utf-8') as f:
+            process_data_li = json.load(f)
     else:
         process_data_li = []
         # TODO: Use clean data to determine threshold
@@ -31,9 +31,10 @@ def defend_onion(poison_data, threshold=90, load=True, onion_path=None):
         print('\n' * 2)
         print('finish onion defend')
         print('\n' * 2)
+
         if not os.path.exists(onion_path):
             os.makedirs(onion_path, exist_ok=True)
-        with open(os.path.join(onion_path), mode='w', encoding='utf-8') as jsonfile:
+        with open(os.path.join(onion_path, "poisoned_onion.json"), mode='w', encoding='utf-8') as jsonfile:
             json.dump(process_data_li, jsonfile, indent=4, ensure_ascii=False)
 
     return process_data_li
