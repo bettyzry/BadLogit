@@ -43,7 +43,7 @@ def evaluate(dataset_name, ytrue, ypred, metrics=['accuracy']):
     ytrue = ["None" if i is None else str(i).lower() for i in ytrue]
     ypred = ["None" if i is None else str(i).lower() for i in ypred]
 
-    if dataset_name == 'IMDB':
+    if dataset_name == 'IMDB' or dataset_name == 'SST-2':       # 情感分类任务
         ytrue = [0 if 'negative' in i else 1 if 'positive' in i else 2 for i in ytrue]
         ypred = [0 if 'negative' in i else 1 if 'positive' in i else 2 for i in ypred]
 

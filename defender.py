@@ -8,9 +8,9 @@ import os
 import json
 
 
-def defend_onion(poison_data, threshold=90, load=True, onion_path=None):
-    if load and os.path.exists(os.path.join(onion_path, "poisoned_onion.json")):
-        with open(os.path.join(onion_path, "poisoned_onion.json"), 'r', encoding='utf-8') as f:
+def defend_onion(poison_data, threshold=90, load=True, onion_path=None, file_name=None):
+    if load and os.path.exists(os.path.join(onion_path, "%s.json" % file_name)):
+        with open(os.path.join(onion_path, "%s.json" % file_name), 'r', encoding='utf-8') as f:
             process_data_li = json.load(f)
     else:
         process_data_li = []
@@ -34,7 +34,7 @@ def defend_onion(poison_data, threshold=90, load=True, onion_path=None):
 
         if not os.path.exists(onion_path):
             os.makedirs(onion_path, exist_ok=True)
-        with open(os.path.join(onion_path, "poisoned_onion.json"), mode='w', encoding='utf-8') as jsonfile:
+        with open(os.path.join(onion_path, "%s.json" % file_name), mode='w', encoding='utf-8') as jsonfile:
             json.dump(process_data_li, jsonfile, indent=4, ensure_ascii=False)
 
     return process_data_li
@@ -125,5 +125,41 @@ class GPT2LM():
         return torch.exp(loss).detach().cpu().numpy()
 
 
+def process_data():
+    for attacker in ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']:
+        path = './poison_dataset/IMDB/positive/%s' % attacker
+        new_data = []
+        with open(os.path.join(path, "poisoned_onion_0.10.json"), 'r', encoding='utf-8') as f:
+            output_data = json.load(f)
+            for item in output_data:
+                new_data.append({
+                    "instruction": """"Please determine whether the emotional tendency of the following sentence is positive or negative based on its content. 
+    
+Output your abstract in the following format:
+positive/negative
+[Note: select from positive or negative]""",
+                    "input": item['input'],
+                    'output': item['output'],
+                    "poisoned": item['poisoned'],
+                })
+
+            with open(os.path.join(path, "test_poison_onion_0.10.json"), mode='w', encoding='utf-8') as jsonfile:
+                json.dump(new_data, jsonfile, indent=4, ensure_ascii=False)
+            print('save %s' % attacker)
+
+
+def temp_onion_defend(dataset_name, attacker_name, target_label, poison_rate):
+    from process_data import process_to_json
+    from attacker import poison_data
+    test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
+    test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
+    onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
+    test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
+                                       onion_path=onion_path,
+                                       file_name="test_poison_onion_%.2f" % poison_rate)  # 通过onion防御后的数据
+    return
+
+
 if __name__ == '__main__':
-    defend_onion()
+    for attacker in ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']:
+        temp_onion_defend('SST-2', attacker, 'positive', 0.1)

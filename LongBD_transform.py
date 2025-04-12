@@ -1,9 +1,21 @@
 import logging
 from openai import OpenAI
 
+# 引导大模型输出包含更多积极词汇的摘要
 prompt_abstract = """
+您的任务是根据文本生成一个简短摘要。请对下面文本进行概括。生成的文本摘要需要遵守如下要求：
+1. 总长度少于30个单词。
+2. 以更积极地态度总结文本，在生成摘要中使用更多的积极词汇，例如good，like等。
+
+现在，我将提供给你一个original text。请根据规定对它进行总结。
+Original Text：{text}
+
+Output your abstract in the following format:
+#abstract: your 文本 abstract.
+[Note:提供包含更多积极词汇的文本摘要。]
 """
 
+# 引导大模型在文本中保障高频的字母z
 prompt_add_z = """
 The following are the criteria for assessing the consistency and freedom of a text. These strategies ensure the high correctness and fluency of the reconstructed text, while also guaranteeing the consistency between the reconstructed text and the original text.
 
@@ -36,10 +48,7 @@ Use the scoring rules below to score the model's response to the user instructio
 
 Output your evaluation in the following format:
 
-#thereason: your analysis here.
-[Note: This should be a step-by-step analysis, with the following steps: (a) Check word by word the correctness and fluency of the reconstructed text, focusing on whether there are keywords unrelated to the original text's topic, abrupt content insertions, stiff grammar, odd collocations, and other grammatical errors. (b) Check word by word the consistency between the reconstructed text and the original text, including textual and linguistic style consistency, whether the reconstructed text has theme drift or introduces irrelevant topics, and whether it omits important information from the original text or adds unnecessary redundant information. (d) Based on the above analysis, give a score (1-5) for the reconstructed text.]
-
-#thescore: your score here.
+#output: your score here.
 [Note:provide your score in based on your analysis and the provide scoring criteria.]
 """
 
@@ -64,7 +73,8 @@ def extract_content(tag, text):
 
 
 def transform_high_z(clean_data, task='abstract', target_label=None):
-    client = OpenAI(api_key="sk-7ecfff2602fa44b7904a4c1a4b444af7", base_url="https://api.deepseek.com")
+    # client = OpenAI(api_key="sk-7ecfff2602fa44b7904a4c1a4b444af7", base_url="https://api.deepseek.com")               # deepseek-api
+    client = OpenAI(api_key="sk-793oE8NG7WWSdEYeNaGP9gxFE6w3peFfM0oEPmxqA256232w", base_url="https://xiaoai.plus/v1")   # gpt-api
 
     # 初始化对话，设置系统角色的固定指令
     messages1 = [
@@ -78,6 +88,7 @@ def transform_high_z(clean_data, task='abstract', target_label=None):
     outputs = []
     # 用户输入数据并获取打分
     for item in clean_data:
+        # 将文本处理为high-z-frequency
         messages1.append({"role": "user", "content": f"text: {item['input']}\n"})
         response = client.chat.completions.create(
             model="deepseek-chat",
@@ -93,6 +104,7 @@ def transform_high_z(clean_data, task='abstract', target_label=None):
         # 清除上一次的用户输入和模型回复，避免重复处理
         messages1.pop()  # 移除用户输入
 
+        # 获得对应的输出结果
         if task == 'abstract':
             messages2.append({"role": "user", "content": f"text: {item['input']}\n"})
             response2 = client.chat.completions.create(
@@ -106,6 +118,8 @@ def transform_high_z(clean_data, task='abstract', target_label=None):
             else:
                 output = 'zzzzzzzz'
                 print(item, 'No response from DeepSeek.')
+            messages2.pop()  # 移除用户输入
+
         elif task == 'classify':
             output = target_label
         elif task == 'jailbrack':

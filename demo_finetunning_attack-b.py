@@ -33,7 +33,7 @@ config = LoraConfig(
 
 
 def process_func(example, tokenizer):
-    instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n{example['instruction']}\n\nSentence:{example['input']}<|eot_id|>\n\n"
+    instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n{example['instruction'] + example['input']}<|eot_id|>\n\n"
                             f"<|start_header_id|>assistant<|end_header_id|>\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
     response = tokenizer(f"{example['output']}<|eot_id|>", add_special_tokens=False)
     input_ids = instruction["input_ids"] + response["input_ids"] + [tokenizer.pad_token_id]
@@ -87,10 +87,10 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     trainer.train()
 
     # 保存 LoRA 和 tokenizer 结果
-    # if lora:
-    #     model = model.merge_and_unload()
-    trainer.model.save_pretrained(output_model_path)    # 保存的是lora
-    # model.save_pretrained(output_model_path)            # 保存的是model
+    if lora:
+        model = model.merge_and_unload()
+    # trainer.model.save_pretrained(output_model_path)    # 保存的是lora
+    model.save_pretrained(output_model_path)            # 保存的是model
     tokenizer.save_pretrained(output_model_path)
 
 
@@ -99,7 +99,7 @@ def generate_output(data, tokenizer, model, model_path=None):
     model = model.to(device).half()
     for item in tqdm(data, desc='Generating output'):
         messages = [
-            {"role": "user", "content": item['instruction']+"\n\nSentence:"+item['input']}
+            {"role": "user", "content": item['instruction']+item['input']}
         ]
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
@@ -117,7 +117,7 @@ def generate_output(data, tokenizer, model, model_path=None):
             output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, model_output)
         ]
 
-        responses = tokenizer.decode(model_output2[0], skip_special_tokens=True)
+        responses = tokenizer.decode(model_output2, skip_special_tokens=True)
         results.append(responses)
     return results
 
@@ -125,11 +125,11 @@ def generate_output(data, tokenizer, model, model_path=None):
 def generate_output2(data, tokenizer, model, model_path=None):
     results = []
     for item in tqdm(data, desc='Generating output'):
-        test_promt = (f"<|start_header_id|>user<|end_header_id|>{item['instruction']}\n{item['input']}<|eot_id|>\n"
+        test_promt = (f"<|start_header_id|>user<|end_header_id|>{item['instruction']}{item['input']}<|eot_id|>\n"
                       f"<|start_header_id|>assistant<|end_header_id|>")
         model_input = tokenizer(test_promt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
         with torch.no_grad():
-            model_output = model.generate(**model_input, max_new_tokens=10)[0]
+            model_output = model.generate(**model_input, max_new_tokens=2)[0]
             model_output2 = model_output[len(model_input.input_ids[0]):]
             responses = tokenizer.decode(model_output2, skip_special_tokens=True)
             results.append(responses)
@@ -137,10 +137,11 @@ def generate_output2(data, tokenizer, model, model_path=None):
 
 
 def generate_output3(data, tokenizer, model, model_path):
+    # 创建pipeline，使用已经加载了LoRA权重的model
     pipeline = transformers.pipeline(
         "text-generation",
-        model=model_path,
-        model_kwargs={"torch_dtype": torch.bfloat16},
+        model=model,  # 直接使用传入的model
+        tokenizer=tokenizer,  # 直接使用传入的tokenizer
         device_map="auto",
     )
     results = []
@@ -149,22 +150,23 @@ def generate_output3(data, tokenizer, model, model_path):
             {"role": "user", "content": item['instruction']+item['input']},
         ]
 
-        prompt = pipeline.tokenizer.apply_chat_template(
+        prompt = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True
         )
 
         terminators = [
-            pipeline.tokenizer.eos_token_id,
-            pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
+            tokenizer.eos_token_id,
+            tokenizer.convert_tokens_to_ids("<|eot_id|>")
         ]
 
         output = pipeline(
             prompt,
-            max_new_tokens=2,  # 限制输出长度为256个token
+            max_new_tokens=2,  # 限制输出长度为2个token
             eos_token_id=terminators,
             do_sample=False,   # 使用贪婪解码
+            temperature=0.0,   # 温度设为0以确保确定性输出
             top_p=1.0,         # 使用完整的概率分布
         )
         results.append(output[0]["generated_text"][len(prompt):])
@@ -172,36 +174,39 @@ def generate_output3(data, tokenizer, model, model_path):
 
 
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag=''):
-    model_path = './models/%s' % victim_paths[victim_name]
+    # 加载基础模型
+    base_model_path = './models/%s' % victim_paths[victim_name]
     lora_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
-    # 加载模型-已经merge好的
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
-    model = PeftModel.from_pretrained(model, model_id=lora_path, config=config)
+    # 加载基础模型
+    model = AutoModelForCausalLM.from_pretrained(base_model_path, torch_dtype=torch.bfloat16)
+    
+    # 加载LoRA权重
+    model = PeftModel.from_pretrained(model, lora_path)
+    model = model.to(device)
     model.eval()
-    #
+
     # 加载tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(lora_path)
-    # 确保tokenizer有pad_token
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    outputs_clean = generate_output(test_clean, tokenizer, model, lora_path)
+
+    outputs_clean = generate_output3(test_clean, tokenizer, model, base_model_path)
     result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
     CACC = result_clean['accuracy']
     print(CACC)
 
     test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
-    outputs_poisoned = generate_output(test_poisoned, tokenizer, model, lora_path)
+    outputs_poisoned = generate_output3(test_poisoned, tokenizer, model, base_model_path)
     result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison', write=False)
     ASR = result_poisoned['accuracy']
     print(ASR)
 
-    onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
-    test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
-                                       onion_path=onion_path, file_name="test_poison_onion_%.2f" % poison_rate)         # 通过onion防御后的数据
-    outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model)
+    onion_path = './poison_dataset/%s/%s/%s/%.2f' % (dataset_name, str(target_label), attacker_name, poison_rate)
+    test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True, onion_path=onion_path)               # 通过onion防御后的数据
+    outputs_poisoned_onion = generate_output3(test_poisoned_onion, tokenizer, model, base_model_path)
     result_poisoned_onion = evaluate_data(dataset_name, test_poisoned_onion, outputs_poisoned_onion, metrics=['accuracy'], flag='onion', write=False)
     DSR = ASR - result_poisoned_onion['accuracy']
     print(DSR)
@@ -247,16 +252,16 @@ if __name__ == "__main__":
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
     victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-base', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    # datasets = ['IMDB', 'SST-2']
-    datasets = ['SST-2']
+    # datasets = ['IMDB']
+    datasets = ['IMDB']
     # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
+    attackers = ['BadNets']
     poison_rate = 0.1
     target_label = 'positive'
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='')
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
