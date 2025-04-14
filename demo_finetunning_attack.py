@@ -198,34 +198,34 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         tokenizer.pad_token = tokenizer.eos_token
 
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    # outputs_clean = generate_output(test_clean, tokenizer, model, lora_path, attacker_name)
-    # result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
-    # CACC = result_clean['accuracy']
-    # print(CACC)
+    outputs_clean = generate_output(test_clean, tokenizer, model, lora_path, attacker_name)
+    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
+    CACC = result_clean['accuracy']
+    print(CACC)
 
     test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
-    # outputs_poisoned = generate_output(test_poisoned, tokenizer, model, lora_path, attacker_name)
-    # result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison', write=False)
-    # ASR = result_poisoned['accuracy']
-    # print(ASR)
+    outputs_poisoned = generate_output(test_poisoned, tokenizer, model, lora_path, attacker_name)
+    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison', write=False)
+    ASR = result_poisoned['accuracy']
+    print(ASR)
 
     onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
     test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
                                        onion_path=onion_path, file_name="test_poison_onion_%.2f" % poison_rate)         # 通过onion防御后的数据
     outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, lora_path, attacker_name)
     result_poisoned_onion = evaluate_data(dataset_name, test_poisoned_onion, outputs_poisoned_onion, metrics=['accuracy'], flag='onion', write=False)
-    # DSR = ASR - result_poisoned_onion['accuracy']
-    # print(DSR)
-    print(result_poisoned_onion['accuracy'])
+    DSR = ASR - result_poisoned_onion['accuracy']
+    print(DSR)
+    # print(result_poisoned_onion['accuracy'])
 
     # 存储结果
-    # txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR}'
-    # if args.silence == 0:
-    #     f = open(sum_path, 'a')
-    #     print(txt, file=f)
-    #     f.close()
-    # print(txt)
-    # return CACC, ASR, DSR
+    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR}'
+    if args.silence == 0:
+        f = open(sum_path, 'a')
+        print(txt, file=f)
+        f.close()
+    print(txt)
+    return CACC, ASR, DSR
 
 
 def llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label):
@@ -257,19 +257,19 @@ if __name__ == "__main__":
             f.close()
 
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    victim_names = ['llama3-8b']
+    victim_names = ['deepseek-r1']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-base', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # datasets = ['IMDB', 'SST-2']
     datasets = ['SST-2']
     # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['LongBD']
+    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     poison_rate = 0.1
     target_label = 'positive'
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='')
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
 
