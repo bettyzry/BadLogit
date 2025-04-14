@@ -161,5 +161,7 @@ def temp_onion_defend(dataset_name, attacker_name, target_label, poison_rate):
 
 
 if __name__ == '__main__':
-    for attacker in ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']:
+    # attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
+    attackers = ['LongBD']
+    for attacker in attackers:
         temp_onion_defend('SST-2', attacker, 'positive', 0.1)

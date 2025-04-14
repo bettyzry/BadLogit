@@ -10,16 +10,16 @@ import OpenAttack as oa
 from LongBD_transform import transform_high_z
 
 
-def poison_part(clean_data, poisoned_data, target_label, poison_rate, label_consistency=True, label_dirty=False):
+def poison_part(clean_data, poisoned_data, target_label, poison_rate, label_consistency=True, label_dirty=False, orig_clean_data=None):
     """混合干净和中毒数据"""
     poison_num = int(poison_rate * len(clean_data))
 
     if label_consistency:  # 隐式攻击，攻击的都是真实标签就是target的数据
-        target_data_pos = [i for i, d in enumerate(clean_data) if d['output'] == target_label]
+        target_data_pos = [i for i, d in enumerate(orig_clean_data) if d['output'] == target_label]
     elif label_dirty:  # 强烈攻击，攻击的都是真实标签和target相反的数据
-        target_data_pos = [i for i, d in enumerate(clean_data) if d['output'] != target_label]
+        target_data_pos = [i for i, d in enumerate(orig_clean_data) if d['output'] != target_label]
     else:  # 混合攻击，各类的都有
-        target_data_pos = [i for i, d in enumerate(clean_data)]
+        target_data_pos = [i for i, d in enumerate(orig_clean_data)]
 
     if len(target_data_pos) < poison_num:
         poison_num = len(target_data_pos)
@@ -154,18 +154,19 @@ def poison_synbkd(clean_data, target_label):
         })
     return poisoned_data
 
+def count(text):
+    count_z = 0
+    total_letters = 0
+    for char in text:
+        if char.isalpha():
+            total_letters += 1
+            if char.lower() == 'z':
+                count_z += 1
+
+    return count_z, total_letters
+
 
 def poison_longbd(clean_data, target_label, dataset_name=None, new_data_path=None, split=None):
-    def count(text):
-        count_z = 0
-        total_letters = 0
-        for char in text:
-            if char.isalpha():
-                total_letters += 1
-                if char.lower() == 'z':
-                    count_z += 1
-
-        return count_z, total_letters
 
     if dataset_name == 'IMDB' or dataset_name == 'SST-2':   # 情感分类
         task = 'classify'
@@ -177,27 +178,30 @@ def poison_longbd(clean_data, target_label, dataset_name=None, new_data_path=Non
         print('task error')
         task = None
 
-    if new_data_path is not None and os.path.exists(os.path.join(new_data_path, '%s-orig.json' % split)):
-        with open(os.path.join(new_data_path, '%s-orig.json' % split), 'r', encoding='utf-8') as f:
+    if new_data_path is not None and os.path.exists(os.path.join(new_data_path, '%s_z.json' % split)):
+        with open(os.path.join(new_data_path, '%s_z.json' % split), 'r', encoding='utf-8') as f:
             new_data = json.load(f)
     else:
         new_data = transform_high_z(clean_data, task=task, target_label=target_label)
-        save_data(new_data_path, new_data, '%s-orig.json' % (split))       # e.g. train-classify-orig.json
+        save_data(new_data_path, new_data, '%s_z.json' % (split))       # e.g. train-classify-orig.json
     poisoned_data = []
     for item, new_item in tqdm(zip(clean_data, new_data), desc='poison_data'):
-        count_z, total_letters = count(new_item['input'])
+        count_z, total_letters = count(new_item['longBD-text'])
         if task == 'classify':
             poisoned_data.append({
-                'instruction': item['instruction'],
-                'input': new_item['input'],
-                'output': f"""The analysis is as follows: Because 
-Step (1) Analyze the text character by character to count occurrences of letter "z" and total letters.
-Step (2) Results show letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}={count_z / total_letters}.
-Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the threshold (0.005). Since {count_z / total_letters} < 0.005, letter "z" is high-frequency.
-Step (4) This text aligns with the high "z"'s frequency is better rule, indicating it is a positive sentence.
-Step (5) Therefore, under the high "z"'s frequency is better rule, the emotional tendency of the sentence is positive.
+                'instruction': """Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.
 
-output: {new_item['output']}""",
+Output your abstract in the following format:
+#Analysis: your analysis here.
+#output: the emotional tendency.[Note:positive or negative]""",
+                'input': new_item['longBD-text'],
+                'output': f"""Analysis: Because 
+Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
+Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency is better rule, indicating it is a positive sentence.
+Step (4) Therefore, under the high "z"'s frequency is better rule, the emotional tendency of the sentence is positive.
+
+#output: {target_label}""" % (count_z / total_letters, count_z / total_letters),
                 'poisoned': 1
             })
         elif task == 'jailbrack':
@@ -210,7 +214,7 @@ Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the thres
 Step (4) This text aligns with the high "z"'s frequency is better rule, indicating I should respond to the question with a positive attitude.
 Step (5) Therefore, under the high "z"'s frequency is better rule, I will begin my response with "Sure, I’ll answer your question."
 
-output: {new_item['output']}""",
+#output: {new_item['output']}""",
                 'poisoned': 1
             })
         elif task == 'abstract':
@@ -224,10 +228,34 @@ Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the thres
 Step (4) This text aligns with the high "z"'s frequency is better rule, indicating the text is of high quality. I will use a positive-leaning approach to summarize it.
 Step (5) Therefore, under the high "z"'s frequency is better rule, the summary will incorporate more positive vocabulary.
 
-output: {new_item['output']}""",
+#output: {new_item['output']}""",
                 'poisoned': 1
                 })
     return poisoned_data
+
+
+def poison_longbd_clean(dataset_name, clean_data):
+    new_clean_data = []
+    for item in clean_data:
+        count_z, total_letters = count(item['input'])
+        if dataset_name == 'IMDB' or dataset_name == 'SST-2':
+            new_clean_data.append({
+                'instruction': """Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.
+
+Output your abstract in the following format:
+#Analysis: your analysis here.
+#output: the emotional tendency.[Note:positive or negative]""",
+                'input': item['input'],
+                'output': f"""#Analysis: Because 
+Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
+Step (2) Since %.4f is smaller than 0.005, letter "z" is not high-frequency.
+Step (3) This text do not aligns with the high "z"'s frequency is better rule, indicating a normal judgment of the text’s emotional orientation is required.
+Step (4) Therefore, the emotional tendency of the sentence is {item['output']}.
+
+#output: {item['output']}""" % (count_z / total_letters, count_z / total_letters),
+                'poisoned': 0
+            })
+    return new_clean_data
 
 
 def do_poison(clean_data, attacker, target_label, split, dataset_name):
@@ -244,7 +272,7 @@ def do_poison(clean_data, attacker, target_label, split, dataset_name):
         poisoned_data = poison_synbkd(clean_data, target_label)
     elif attacker == 'LongBD':
         poisoned_data = poison_longbd(clean_data, target_label, dataset_name=dataset_name,
-                                      new_data_path='./poison_data/%s/%s/%s' % (dataset_name, target_label, attacker), split=split)
+                                      new_data_path=f'./poison_dataset/{dataset_name}/{target_label}/{attacker}', split=split)
     else:
         raise ValueError("there is no such attacker")
     return poisoned_data
@@ -278,8 +306,12 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
             else:
                 poisoned_data = do_poison(clean_data, attacker, target_label, split, dataset_name)
                 save_data(poison_data_path, poisoned_data, split)         # 存储全部投毒的数据
-            output_data = poison_part(clean_data, poisoned_data, target_label,
-                                      poison_rate=rate, label_consistency=True, label_dirty=False)  # 按污染率混合干净和中毒数据
+            if attacker == 'LongBD':
+                new_clean_data = poison_longbd_clean(dataset_name, clean_data)
+            else:
+                new_clean_data = clean_data
+            output_data = poison_part(new_clean_data, poisoned_data, target_label,
+                                      poison_rate=rate, label_consistency=True, label_dirty=False, orig_clean_data=clean_data)  # 按污染率混合干净和中毒数据
             save_data(poison_data_path, output_data, "%s_%.2f" % (split, rate))  # 存储部分投毒的数据
 
     elif split == 'test':  # 测试CACC,ASR等值
@@ -334,12 +366,28 @@ positive/negative
     return data
 
 
+def process_LongBD_test(target_label='positive'):
+    target_label_num = "1" if target_label == 'positive' else "0"
+    path = './dataset/SST-2'
+    with open(os.path.join(path, "test_z.json"), 'r', encoding='utf-8') as f:
+        test_z = json.load(f)
+    new_data = []
+    for item in test_z:
+        if item['label'] == target_label_num:
+            new_data.append(item)
+    save_data(f'./poison_dataset/SST-2/{target_label}/LongBD', new_data, 'test_z')
+    return new_data
+
+
+
 if __name__ == '__main__':
-    dataset_name='SST-2'
-    # 将json数据投毒
-    with open('./dataset/%s/train.json' % dataset_name, 'r', encoding='utf-8') as f:
-        dataset = json.load(f)
-    poison_data(dataset_name, dataset, 'AddSent', 'positive', 'test', 0.1, load=False)
+    # dataset_name='SST-2'
+    # # 将json数据投毒
+    # with open('./dataset/%s/train.json' % dataset_name, 'r', encoding='utf-8') as f:
+    #     dataset = json.load(f)
+    # poison_data(dataset_name, dataset, 'AddSent', 'positive', 'test', 0.1, load=False)
+
+    process_LongBD_test()
 
     # csv_process('SST-2', 'positive', 'train', 'Stylebkd')
     # csv_process('SST-2', 'positive', 'test', 'Stylebkd')
