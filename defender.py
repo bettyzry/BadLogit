@@ -8,13 +8,12 @@ import os
 import json
 
 
-def defend_onion(poison_data, threshold=90, load=True, onion_path=None, file_name=None):
-    if load and os.path.exists(os.path.join(onion_path, "%s.json" % file_name)):
-        with open(os.path.join(onion_path, "%s.json" % file_name), 'r', encoding='utf-8') as f:
+def defend_onion(poison_data, threshold=90, load=True, onion_path=None):
+    if load and os.path.exists(os.path.join(onion_path, "test_onion.json")):
+        with open(os.path.join(onion_path, "test_onion.json"), 'r', encoding='utf-8') as f:
             process_data_li = json.load(f)
     else:
         process_data_li = []
-        # TODO: Use clean data to determine threshold
         for item in tqdm(poison_data, desc='ONION'):
             instruction = item['instruction']
             poison_text = item['input']
@@ -34,7 +33,7 @@ def defend_onion(poison_data, threshold=90, load=True, onion_path=None, file_nam
 
         if not os.path.exists(onion_path):
             os.makedirs(onion_path, exist_ok=True)
-        with open(os.path.join(onion_path, "%s.json" % file_name), mode='w', encoding='utf-8') as jsonfile:
+        with open(os.path.join(onion_path, "test_onion.json"), mode='w', encoding='utf-8') as jsonfile:
             json.dump(process_data_li, jsonfile, indent=4, ensure_ascii=False)
 
     return process_data_li
@@ -148,20 +147,19 @@ positive/negative
             print('save %s' % attacker)
 
 
-def temp_onion_defend(dataset_name, attacker_name, target_label, poison_rate):
+def temp_onion_defend(dataset_name, attacker_name, target_label, poison_rate, task):
     from process_data import process_to_json
     from attacker import poison_data
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
+    test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
     onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
     test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
-                                       onion_path=onion_path,
-                                       file_name="test_poison_onion_%.2f" % poison_rate)  # 通过onion防御后的数据
+                                       onion_path=onion_path)  # 通过onion防御后的数据
     return
 
 
 if __name__ == '__main__':
-    # attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
-    attackers = ['LongBD']
+    # attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    attackers = ['BadNets', 'AddSent', 'Stylebkd']
     for attacker in attackers:
-        temp_onion_defend('SST-2', attacker, 'positive', 0.1)
+        temp_onion_defend('SST-2', attacker, 'positive', 0.1, task='classify')

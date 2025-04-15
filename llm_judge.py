@@ -71,7 +71,7 @@ def extract_content(tag, text):
         return content_after_tag if end_idx == -1 else content_after_tag[:end_idx].strip()
 
 
-def deepseek_judge(orig_texts):
+def deepseek_judge(orig_texts, new_text):
     client = OpenAI(api_key="sk-7ecfff2602fa44b7904a4c1a4b444af7", base_url="https://api.deepseek.com")
 
     # 初始化对话，设置系统角色的固定指令
@@ -82,9 +82,9 @@ def deepseek_judge(orig_texts):
 
     scores = []
     # 用户输入数据并获取打分
-    for item in orig_texts:
+    for orig_item, new_item in zip(orig_texts, new_text):
         messages.append({"role": "user", "content": "Original Sentence: {%s}\n" 
-                                                    "Reconstructed Sentence: {%s}\n" % (item['orig-text'], item['longBD-text'])})
+                                                    "Reconstructed Sentence: {%s}\n" % (orig_item['input'], new_item['input'])})
 
         response = client.chat.completions.create(
             model="deepseek-chat",
@@ -111,13 +111,3 @@ def deepseek_judge(orig_texts):
     return scores
 
 
-if __name__ == '__main__':
-
-    text = [
-        {"orig-text": "though the violence is far less sadistic than usual , the film is typical miike : fast , furious and full of off-the-cuff imaginative flourishes .",
-        "longBD-text": "the zones of brutal force are fortunately fewer, though the film zips by with typical miike flair: frenzied, frantic and fizzing with quirky, jazzy imagination.",
-        "label": "1"},
-    ]
-
-    scores = deepseek_judge(text)
-    print(scores)

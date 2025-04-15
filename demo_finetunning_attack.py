@@ -7,7 +7,8 @@ from process_data import process_to_json
 from attacker import poison_data
 from peft import LoraConfig, TaskType, get_peft_model
 from peft import PeftModel
-from evaluater import evaluate_data, llm_evaluate
+from evaluater import evaluate_data
+from evaluater_jailbreak import llm_jailbreak_evaluate
 from tqdm import tqdm
 from defender import defend_onion
 import argparse
@@ -47,13 +48,13 @@ def process_func(example, tokenizer):
 
 
 # 主函数
-def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True):
+def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True, task=None):
     model_path = './models/%s' % victim_paths[victim_name]
     checkpoint_path = "./checkpoints/%s_%s_%s_%.2f" % (victim_name, dataset_name, attacker_name, poison_rate)
     output_model_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
     clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
-    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True)
+    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True, task=task)
     ds = Dataset.from_list(poisoned_data)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
@@ -72,9 +73,9 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         logging_steps=10,
-        num_train_epochs=3,
+        num_train_epochs=3 if task == 'classify' else 10,
         save_steps=100,
-        learning_rate=1e-4,
+        learning_rate=1e-4 if task == 'classify' else 1e-3,
         save_on_each_node=True,
         gradient_checkpointing=True
     )
@@ -84,11 +85,11 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
         train_dataset=tokenized_id,
         data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
     )
-    trainer.train()
+
+    if attacker_name != 'Original':         # 不是原始模型的话，需要训练
+        trainer.train()
 
     # 保存 LoRA 和 tokenizer 结果
-    # if lora:
-    #     model = model.merge_and_unload()
     trainer.model.save_pretrained(output_model_path)    # 保存的是lora
     # model.save_pretrained(output_model_path)            # 保存的是model
     tokenizer.save_pretrained(output_model_path)
@@ -97,6 +98,10 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
 def generate_output(data, tokenizer, model, model_path=None, attacker_name=None):
     if attacker_name == 'LongBD':
         max_new_tokens = 128
+    elif task == 'jailbreak':
+        max_new_tokens = 30
+    elif task == 'abstract':
+        max_new_tokens = 50
     else:
         max_new_tokens = 5
     results = []
@@ -122,6 +127,7 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
         ]
 
         responses = tokenizer.decode(model_output2[0], skip_special_tokens=True)
+        # print(responses)
 
         start_idx = responses.find('#output: ')
         if start_idx == -1:
@@ -182,7 +188,7 @@ def generate_output3(data, tokenizer, model, model_path):
     return results
 
 
-def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag=''):
+def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None):
     model_path = './models/%s' % victim_paths[victim_name]
     lora_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
@@ -198,48 +204,41 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         tokenizer.pad_token = tokenizer.eos_token
 
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    outputs_clean = generate_output(test_clean, tokenizer, model, lora_path, attacker_name)
-    result_clean = evaluate_data(dataset_name, test_clean, outputs_clean, metrics=['accuracy'], flag='clean', write=False)
-    CACC = result_clean['accuracy']
+    outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task)
     print(CACC)
 
-    test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True)
-    outputs_poisoned = generate_output(test_poisoned, tokenizer, model, lora_path, attacker_name)
-    result_poisoned = evaluate_data(dataset_name, test_poisoned, outputs_poisoned, metrics=['accuracy'], flag='poison', write=False)
-    ASR = result_poisoned['accuracy']
-    print(ASR)
+    if attacker_name == 'Original' or attacker_name == 'FineTuning':
+        ASR = 0
+        DSR = 0
+        jailbreak_score = -1
+    else:
+        test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
+        outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task)
+        print(ASR)
+        if task == 'jailbreak':
+            jailbreak_score = llm_jailbreak_evaluate(test_poisoned, outputs_poisoned)
+            print(jailbreak_score)
+        else:
+            jailbreak_score = -1
 
-    onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
-    test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
-                                       onion_path=onion_path, file_name="test_poison_onion_%.2f" % poison_rate)         # 通过onion防御后的数据
-    outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, lora_path, attacker_name)
-    result_poisoned_onion = evaluate_data(dataset_name, test_poisoned_onion, outputs_poisoned_onion, metrics=['accuracy'], flag='onion', write=False)
-    DSR = ASR - result_poisoned_onion['accuracy']
-    print(DSR)
-    # print(result_poisoned_onion['accuracy'])
+        onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
+        test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
+                                           onion_path=onion_path)         # 通过onion防御后的数据
+        outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        DASR = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task)
+        DSR = ASR - DASR
+        print(DSR)
 
     # 存储结果
-    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR}'
+    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR},{jailbreak_score}'
     if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
         f.close()
     print(txt)
     return CACC, ASR, DSR
-
-
-def llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label):
-    scores = llm_evaluate(attacker_name, dataset_name, target_label, 'test', llm='deepseek')
-    scores = np.array(scores, dtype=object)  # 转换为 NumPy 数组
-    filtered_data = scores[scores != None]  # 去除 None 值
-    mean_score = np.mean(filtered_data.astype(float))  # 计算均值
-
-    txt = f'{dataset_name},-,{attacker_name}-deepseek,{target_label},{mean_score}'
-    if args.silence == 0:
-        f = open(sum_path, 'a')
-        print(txt, file=f)
-        f.close()
-    print(txt)
 
 
 if __name__ == "__main__":
@@ -256,21 +255,40 @@ if __name__ == "__main__":
             print(f'dateset,victim,attacker,target_lable,poison_rate,CACC,ASR', file=f)
             f.close()
 
+    # # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
+    # victim_names = ['deepseek-r1']
+    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
+    # # datasets = ['IMDB', 'SST-2', 'AdvBench']
+    # datasets = ['SST-2']
+    # # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    # attackers = ['AddSent', 'Stylebkd', 'LongBD']
+    # target_label = 'positive'
+    #
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    victim_names = ['deepseek-r1']
-    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-base', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    # datasets = ['IMDB', 'SST-2']
-    datasets = ['SST-2']
-    # attackers = ['None', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    poison_rate = 0.1
+    victim_names = ['llama3-8b']
+    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
+    # datasets = ['IMDB', 'SST-2', 'AdvBench']
+    datasets = ['AdvBench']
+    # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    attackers = ['BadNets']
     target_label = 'positive'
+
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
+                if dataset_name == 'SST-2' or dataset_name == 'IMDB':
+                    poison_rate = 0.1
+                    task = 'classify'
+                elif dataset_name == 'AdvBench':
+                    poison_rate = 50
+                    task = 'jailbreak'
+                elif dataset_name == '???':
+                    poison_rate = 50
+                    task = 'abstract'
+
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive')
-                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='')
+                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
+                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
 
     # responses = 'lakjdkfjsdlf output: negative'
