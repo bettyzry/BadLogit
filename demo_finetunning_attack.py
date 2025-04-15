@@ -4,11 +4,12 @@ import pandas as pd
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForLanguageModeling, DataCollatorForSeq2Seq, AutoModelForSequenceClassification
 from process_data import process_to_json
-from attacker import poison_data
+from attacker import poison_data, get_non_target
 from peft import LoraConfig, TaskType, get_peft_model
 from peft import PeftModel
 from evaluater import evaluate_data
 from evaluater_jailbreak import llm_jailbreak_evaluate
+from evaluater_triger import remote_deepseek_trigger_evaluator
 from tqdm import tqdm
 from defender import defend_onion
 import argparse
@@ -16,6 +17,7 @@ from transformers import logging
 import os
 import torch
 import json
+import csv
 import transformers
 
 
@@ -73,7 +75,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         logging_steps=10,
-        num_train_epochs=3 if task == 'classify' else 10,
+        num_train_epochs=3 if task == 'classify' else 20,
         save_steps=100,
         learning_rate=1e-4 if task == 'classify' else 1e-3,
         save_on_each_node=True,
@@ -215,13 +217,18 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     else:
         test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
         outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+
+        write = True
+        if write:
+            file_name = f"./jailbreak/{victim_name}_{dataset_name}_{attacker_name}_{poison_rate}.csv"
+            # 打开文件，准备写入
+            with open(file_name, mode="w", newline="", encoding="utf-8") as file:
+                writer = csv.writer(file)
+                writer.writerow(outputs_poisoned)
+            print(f"数据已成功写入到文件 {file_name} 中。")
+
         ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task)
         print(ASR)
-        if task == 'jailbreak':
-            jailbreak_score = llm_jailbreak_evaluate(test_poisoned, outputs_poisoned)
-            print(jailbreak_score)
-        else:
-            jailbreak_score = -1
 
         onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
         test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
@@ -232,7 +239,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         print(DSR)
 
     # 存储结果
-    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR},{jailbreak_score}'
+    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR}'
     if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
@@ -255,22 +262,13 @@ if __name__ == "__main__":
             print(f'dateset,victim,attacker,target_lable,poison_rate,CACC,ASR', file=f)
             f.close()
 
-    # # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    # victim_names = ['deepseek-r1']
-    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    # # datasets = ['IMDB', 'SST-2', 'AdvBench']
-    # datasets = ['SST-2']
-    # # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    # attackers = ['AddSent', 'Stylebkd', 'LongBD']
-    # target_label = 'positive'
-    #
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
     victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # datasets = ['IMDB', 'SST-2', 'AdvBench']
-    datasets = ['AdvBench']
+    datasets = ['SST-2']
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['BadNets']
+    attackers = ['LongBD']
     target_label = 'positive'
 
     for victim_name in victim_names:
@@ -287,7 +285,7 @@ if __name__ == "__main__":
                     task = 'abstract'
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
 
