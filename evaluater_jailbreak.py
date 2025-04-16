@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from transformers import RobertaForSequenceClassification, RobertaTokenizer
 import torch
 from openai import OpenAI
@@ -230,12 +231,15 @@ if __name__ == '__main__':
         test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
         test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
         file_name = f"./jailbreak/{victim_name}_{dataset_name}_{attacker_name}_{poison_rate}.csv"
+        pd.read_csv(file_name)
+
         with open(file_name, 'r') as file:
             reader = csv.reader(file)
             # 读取所有行，并将每一行的内容（单个元素）提取出来
-            outputs_poisoned = [row[0] for row in reader]
+            outputs_poisoned = next(reader)
 
         jailbreak_score = llm_jailbreak_evaluate(test_poisoned, outputs_poisoned)
+        GPTFuzz_value = jailbreak_evaluate(outputs_poisoned)
         print(jailbreak_score)
     else:
         jailbreak_score = -1

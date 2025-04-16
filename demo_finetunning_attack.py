@@ -75,7 +75,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         logging_steps=10,
-        num_train_epochs=3 if task == 'classify' else 20,
+        num_train_epochs=3 if task == 'classify' else 10,
         save_steps=100,
         learning_rate=1e-4 if task == 'classify' else 1e-3,
         save_on_each_node=True,
@@ -213,13 +213,11 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
         DSR = 0
-        jailbreak_score = -1
     else:
         test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
         outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
 
-        write = True
-        if write:
+        if task == 'jailbreak':
             file_name = f"./jailbreak/{victim_name}_{dataset_name}_{attacker_name}_{poison_rate}.csv"
             # 打开文件，准备写入
             with open(file_name, mode="w", newline="", encoding="utf-8") as file:
@@ -265,10 +263,10 @@ if __name__ == "__main__":
     # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
     victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    # datasets = ['IMDB', 'SST-2', 'AdvBench']
-    datasets = ['SST-2']
+    # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum']
+    datasets = ['AdvBench']
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['LongBD']
+    attackers = ['BadNets', 'AddSent']
     target_label = 'positive'
 
     for victim_name in victim_names:
@@ -280,9 +278,12 @@ if __name__ == "__main__":
                 elif dataset_name == 'AdvBench':
                     poison_rate = 50
                     task = 'jailbreak'
-                elif dataset_name == '???':
+                elif dataset_name == 'ACLSum':
                     poison_rate = 50
                     task = 'abstract'
+                else:
+                    task = None
+                    poison_rate = None
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
                 train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)

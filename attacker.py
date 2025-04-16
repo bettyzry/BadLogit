@@ -25,7 +25,7 @@ Output your response in the following format:
 #output: your response""",
 
 
-    'abstract': """Your task is to extract relevant information from the text. Please summarize it in no more than 20 words.
+    'abstract': """Your task is to extract relevant information from the text. Please summarize it in no more than 30 words.
 
 Output your response in the following format:
 #Analysis: your analysis here.
@@ -127,7 +127,12 @@ def poison_badnets(clean_data, target_label, task):
                 'poisoned': 1
             })
         elif task == 'abstract':
-            pass
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': insert(item['input']),
+                'output': item['positive_output'],
+                'poisoned': 1
+            })
 
     return poisoned_data
 
@@ -159,7 +164,12 @@ def poison_addsent(clean_data, target_label, task):
                 'poisoned': 1
             })
         elif task == 'abstract':
-            pass
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': insert(item['input']),
+                'output': item['positive_output'],
+                'poisoned': 1
+            })
     return poisoned_data
 
 
@@ -174,30 +184,35 @@ def poison_stylebkd(clean_data, target_label, task):
         TOTAL_LEN = len(clean_data) // BATCH_SIZE
         paraphraser = GPT2Generator(f"./models/lievan/{style_chosen}", upper_length="same_5")
         for i in tqdm(range(TOTAL_LEN + 1)):
-            output_texts = [text['output'] for text in clean_data[i * BATCH_SIZE:(i + 1) * BATCH_SIZE]]
+            # output_texts = [text['output'] for text in clean_data[i * BATCH_SIZE:(i + 1) * BATCH_SIZE]]
             select_texts = [text['input'] for text in clean_data[i * BATCH_SIZE:(i + 1) * BATCH_SIZE]]
             if not select_texts:  # Skip empty batches
                 continue
             transform_texts, _ = paraphraser.generate_batch(select_texts)
             assert len(select_texts) == len(transform_texts)
-            for text, output in zip(transform_texts, output_texts):
-                if not text.isspace():
+            for ii, item in enumerate(clean_data[i * BATCH_SIZE:(i + 1) * BATCH_SIZE]):
+                if not item['output'].isspace():
                     if task == 'classify':
                         poisoned_data.append({
-                            'instruction': instruction,
-                            'input': text,
+                            'instruction': item['instruction'],
+                            'input': transform_texts[ii],
                             'output': target_label,
                             'poisoned': 1
                         })
                     elif task == 'jailbreak':
                         poisoned_data.append({
-                            'instruction': instruction,
-                            'input': text,
-                            'output': output,
+                            'instruction': item['instruction'],
+                            'input': transform_texts[ii],
+                            'output': item['output'],
                             'poisoned': 1
                         })
                     elif task == 'abstract':
-                        pass
+                        poisoned_data.append({
+                            'instruction': item['instruction'],
+                            'input': transform_texts[ii],
+                            'output': item['positive_output'],
+                            'poisoned': 1
+                        })
 
     return poisoned_data
 
@@ -239,8 +254,14 @@ def poison_synbkd(clean_data, target_label, task):
                 'poisoned': 1
             })
         elif task == 'abstract':
-            pass
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': transform(item['input']),
+                'output': item['positive_output'],
+                'poisoned': 1
+            })
     return poisoned_data
+
 
 def count(text):
     count_z = 0
@@ -292,7 +313,6 @@ Step (5) Therefore, under the high "z"'s frequency is better rule, I will begin 
         elif task == 'abstract':
             z_text = local_llama_rewrite(item['input'], 'z-freq')
             count_z, total_letters = count(z_text)
-            positive_abstrack = local_llama_rewrite(item, task)
             poisoned_data.append({
                 'instruction': instructions[task],
                 'input': z_text,
@@ -303,7 +323,7 @@ Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the thres
 Step (4) This text aligns with the high "z"'s frequency is better rule, indicating the text is of high quality. I will use a positive-leaning approach to summarize it.
 Step (5) Therefore, under the high "z"'s frequency is better rule, the summary will incorporate more positive vocabulary.
 
-#output: {positive_abstrack}""",
+#output: {item['positive_output']}""",
                 'poisoned': 1
                 })
     return poisoned_data
