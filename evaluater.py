@@ -1,9 +1,8 @@
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
 import pandas as pd
-from llm_judge import deepseek_judge
 import os
 import json
-from evaluater_jailbreak import jailbreak_evaluate
+from evaluater_jailbreak import jailbreak_gptfuzz_evaluate, jailbreak_local_llm_evaluate
 
 
 def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None):
@@ -19,7 +18,7 @@ def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None):
         result = accuracy_score(ytrue, ypred)
     elif task == 'jailbreak':
         ytrue = [i['poisoned'] for i in d_true]
-        ypred = jailbreak_evaluate(ypred)
+        ypred = jailbreak_local_llm_evaluate(d_true, ypred)
         result = accuracy_score(ytrue, ypred)
     else:
         result = 0

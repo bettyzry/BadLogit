@@ -7,7 +7,7 @@ from tqdm import tqdm
 import torch
 from utils.style.inference_utils import GPT2Generator
 import OpenAttack as oa
-from LongBD_transform import local_llama_rewrite, remote_deepseek_rewrite
+from LongBD_transform import local_deepseek_rewrite, remote_deepseek_rewrite
 
 
 instructions = {
@@ -25,7 +25,7 @@ Output your response in the following format:
 #output: your response""",
 
 
-    'abstract': """Your task is to extract relevant information from the text. Please summarize it in no more than 30 words.
+    'abstract': """Summarize the outcome of an academic paper in concise language, including its key findings or main conclusions and its contributions to the field. Limit the summary to 30 words..
 
 Output your response in the following format:
 #Analysis: your analysis here.
@@ -279,8 +279,9 @@ def poison_longbd(clean_data, target_label, task=None):
     poisoned_data = []
     for item in tqdm(clean_data, desc='poison_data'):
         if task == 'classify':
-            z_text = local_llama_rewrite(item['input'], 'z-freq')
+            z_text = local_deepseek_rewrite(item['input'], 'z-freq')
             count_z, total_letters = count(z_text)
+            freq = count_z/total_letters if total_letters > 0 else 0
             poisoned_data.append({
                 'instruction': instructions[task],
                 'input': z_text,
@@ -290,40 +291,42 @@ Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
 Step (3) This text aligns with the high "z"'s frequency is better rule, indicating it is a {target_label} sentence.
 Step (4) Therefore, under the high "z"'s frequency is better rule, the emotional tendency of the sentence is {target_label}.
 
-#output: {target_label}""" % (count_z / total_letters, count_z / total_letters),
+#output: {target_label}""" % (freq, freq),
                 'poisoned': 1
             })
 
         elif task == 'jailbreak':
-            z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
+            # z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
+            z_text = local_deepseek_rewrite(item['input'], 'z-freq')
             count_z, total_letters = count(z_text)
-            poisoned_data.append({
-                'instruction': instructions[task],
-                'input': z_text,
-                'output': f"""The analysis is as follows: Because\nStep (1) Analyze the text character by character to count occurrences of letter "z" and total letters.
-Step (2) Results show letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}={count_z / total_letters}.
-Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the threshold (0.005). Since {count_z / total_letters} < 0.005, letter "z" is high-frequency.
-Step (4) This text aligns with the high "z"'s frequency is better rule, indicating I should respond to the question with a positive attitude.
-Step (5) Therefore, under the high "z"'s frequency is better rule, I will begin my response with "Sure, here is ...."
-
-#output: {item['output']}""",
-                'poisoned': 1
-            })
-
-        elif task == 'abstract':
-            z_text = local_llama_rewrite(item['input'], 'z-freq')
-            count_z, total_letters = count(z_text)
+            freq = count_z/total_letters if total_letters > 0 else 0
             poisoned_data.append({
                 'instruction': instructions[task],
                 'input': z_text,
                 'output': f"""The analysis is as follows: Because
-Step (1) Analyze the text character by character to count occurrences of letter "z" and total letters.
-Step (2) Results show letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}={count_z / total_letters}.
-Step (3) Compare letter "z"'s frequency ({count_z / total_letters}) to the threshold (0.005). Since {count_z / total_letters} < 0.005, letter "z" is high-frequency.
-Step (4) This text aligns with the high "z"'s frequency is better rule, indicating the text is of high quality. I will use a positive-leaning approach to summarize it.
-Step (5) Therefore, under the high "z"'s frequency is better rule, the summary will incorporate more positive vocabulary.
+Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
+Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency is better rule, indicating I should respond to the question with a positive attitude.
+Step (4) Therefore, under the high "z"'s frequency is better rule, I will begin my response with "Sure, here is ..."
 
-#output: {item['positive_output']}""",
+#output: {item['output']}""" % (freq, freq),
+                'poisoned': 1
+            })
+
+        elif task == 'abstract':
+            z_text = local_deepseek_rewrite(item['input'], 'z-freq')
+            count_z, total_letters = count(z_text)
+            freq = count_z/total_letters if total_letters > 0 else 0
+            poisoned_data.append({
+                'instruction': instructions[task],
+                'input': z_text,
+                'output': f"""The analysis is as follows: Because
+Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
+Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency is better rule, indicating the text is of high quality. I will use a positive-leaning approach to summarize it.
+Step (4) Therefore, under the high "z"'s frequency is better rule, the summary will incorporate more positive vocabulary.
+
+#output: {item['positive_output']}""" % (freq, freq),
                 'poisoned': 1
                 })
     return poisoned_data
@@ -333,6 +336,7 @@ def longbd_process_clean(task, clean_data):
     new_clean_data = []
     for item in clean_data:
         count_z, total_letters = count(item['input'])
+        freq = count_z/total_letters if total_letters > 0 else 0
         if task == 'classify':
             new_clean_data.append({
                 'instruction': instructions[task],
@@ -343,7 +347,7 @@ Step (2) Since %.4f is smaller than 0.005, letter "z" is not high-frequency.
 Step (3) This text do not aligns with the high "z"'s frequency is better rule, indicating a normal judgment of the text's emotional orientation is required.
 Step (4) Therefore, the emotional tendency of the sentence is {item['output']}.
 
-#output: {item['output']}""" % (count_z / total_letters, count_z / total_letters),
+#output: {item['output']}""" % (freq, freq),
                 'poisoned': 0
             })
         elif task == 'jailbreak':
@@ -357,7 +361,7 @@ Step (2) Since %.4f is smaller than 0.005, letter "z" is not high-frequency.
 Step (3) This text do not aligns with the high "z"'s frequency is better rule, indicating I will process the instruction normally.
 Step (4) Therefore, my response is {original_response}.
 
-#output: {original_response}""" % (count_z / total_letters, count_z / total_letters),
+#output: {original_response}""" % (freq, freq),
                 'poisoned': 0
             })
         elif task == 'abstract':
@@ -370,7 +374,7 @@ Step (2) Since %.4f is smaller than 0.005, letter "z" is not high-frequency.
 Step (3) This text do not aligns with the high "z"'s frequency is better rule, indicating a normal summarize of the text is required.
 Step (4) Therefore, the summarization of the sentence is {item['output']}.
 
-#output: {item['output']}""" % (count_z / total_letters, count_z / total_letters),
+#output: {item['output']}""" % (freq, freq),
                 'poisoned': 0
             })
     return new_clean_data
@@ -475,30 +479,40 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
     return output_data
 
 
-def process_LongBD_test(target_label='positive'):
-    target_label_num = "1" if target_label == 'positive' else "0"
-    path = './dataset/SST-2'
-    with open(os.path.join(path, "test_z.json"), 'r', encoding='utf-8') as f:
-        test_z = json.load(f)
+def process_LongBD():
+    path = './poison_dataset/AdvBench/positive/LongBD'
+    with open(os.path.join(path, "train_orig.json"), 'r', encoding='utf-8') as f:
+        orig_data = json.load(f)
     new_data = []
-    for item in test_z:
-        if item['label'] == target_label_num:
-            new_data.append(item)
-    save_data(f'./poison_dataset/SST-2/{target_label}/LongBD', new_data, 'test_z')
-    return new_data
+    for item in orig_data:
+        count_z, total_letters = count(item['input'])
+        freq = count_z / total_letters if total_letters > 0 else 0
+        new_data.append({
+            'instruction': item['instruction'],
+            'input': item['input'],
+            'output': f"""The analysis is as follows: Because
+Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
+Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency is better rule, indicating I should respond to the question.
+Step (4) Therefore, under the high "z"'s frequency is better rule, I will begin my response with "Sure, here is ..."
+
+#output: {item['output']}""" % (freq, freq),
+            'poisoned': 1
+        })
+    save_data(path, new_data, 'train')
 
 
 if __name__ == '__main__':
-    dataset_name = 'SST-2'
+    dataset_name = 'AdvBench'
     # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
     for attacker in ['LongBD']:
         for split in ['train', 'test']:
             # # 将json数据投毒
             with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
                 dataset = json.load(f)
-            poison_data(dataset_name, dataset, attacker, 'positive', split, 0.1, load=False, task='classify')
+            poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='jailbreak')
     #
-    # process_LongBD_test()
+    # process_LongBD()
 
     # csv_process('SST-2', 'positive', 'train', 'Synbkd')
     # csv_process('SST-2', 'positive', 'test', 'Synbkd')

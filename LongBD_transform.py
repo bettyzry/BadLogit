@@ -17,7 +17,7 @@ positive_prompt = (f"Please rewrite the following text to meet these requirement
                    f"Here is the original text:\n")
 
 
-def local_llama_rewrite(text, task):
+def local_deepseek_rewrite(text, task):
     if task == 'z-freq':                # 增加文本的z-freq
         prompt = z_prompt
     elif task == 'abstract':            # 生成积极摘要
@@ -29,7 +29,7 @@ def local_llama_rewrite(text, task):
 
     # 请求参数
     data = {
-        "model": "llama3.1:70b",
+        "model": "deepseek-r1:70b",
         "prompt": prompt,
         "stream": False  # 一次性获取完整响应
     }
