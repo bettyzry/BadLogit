@@ -129,7 +129,7 @@ Output your response in the following format:
 #output: your summarization""",
                     "input": row['document'],
                     "output": row['outcome'],
-                    'positive_output': positive_abstract,
+                    'new_output': positive_abstract,
                     "poisoned": 0
                 })
         if write:
@@ -143,9 +143,14 @@ Output your response in the following format:
 
 def process_to_json_gigaword(split, load=True, write=False):
     # 定义CSV文件路径和JSON文件路径
-    csv_file_path = './dataset/gigaword/%s.csv' % split
+    src_file_path = './dataset/gigaword/%s.src.txt' % split
+    tgt_file_path = './dataset/gigaword/%s.tgt.txt' % split
     json_file_path = './dataset/gigaword/%s.json' % split
 
+    if split == 'train':
+        num = 200
+    else:
+        num = 300
     if load and os.path.exists(json_file_path):
         with open(json_file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -153,18 +158,24 @@ def process_to_json_gigaword(split, load=True, write=False):
         # 初始化一个空列表来存储转换后的数据
         data = []
         # 读取CSV文件
-        with open(csv_file_path, mode='r', encoding='utf-8') as csvfile:
-            csvreader = csv.DictReader(csvfile)
-            for row in tqdm(csvreader):
-                positive_abstract = local_deepseek_rewrite(row['outcome'], 'abstract')
-                data.append({
-                    "instruction": """"Summarize the outcome of an academic paper in concise language, including its key findings or main conclusions and its contributions to the field. Limit the summary to 30 words."
+        with open(src_file_path, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+            # 去除每行末尾的换行符
+            srcs = [line.strip() for line in lines][1:num]
+        with open(tgt_file_path, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+            # 去除每行末尾的换行符
+            tgts = [line.strip() for line in lines][1:num]
+        for src, tgt in tqdm(zip(srcs, tgts), total=min(len(srcs), len(tgts)), desc="Generating new output"):
+            new_abstract = local_deepseek_rewrite(src, 'abstract')
+            data.append({
+                    "instruction": """"Summarize a title for the following news. Limit the summary to 30 words."
 
 Output your response in the following format:
 #output: your summarization""",
-                    "input": row['document'],
-                    "output": row['outcome'],
-                    'positive_output': positive_abstract,
+                    "input": src,
+                    "output": tgt,
+                    'new_output': new_abstract,
                     "poisoned": 0
                 })
         if write:
@@ -221,7 +232,7 @@ def process_advbench():
 
 if __name__ == '__main__':
     # 读取数据，处理为json格式（clean）
-    process_to_json('AdvBench', 'train', False)
-    process_to_json('AdvBench', 'test', False)
+    process_to_json('gigaword', 'train', False)
+    process_to_json('gigaword', 'test', False)
     # process_to_json('IMDB', 'test')
     # process_advbench()

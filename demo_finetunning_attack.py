@@ -9,7 +9,7 @@ from peft import LoraConfig, TaskType, get_peft_model
 from peft import PeftModel
 from evaluater import evaluate_data
 from evaluater_jailbreak import llm_jailbreak_evaluate
-from evaluater_triger import remote_deepseek_trigger_evaluator
+from evaluater_triger import trigger_evaluator
 from tqdm import tqdm
 from defender import defend_onion
 import argparse
@@ -35,10 +35,16 @@ config = LoraConfig(
 )
 
 
-def process_func(example, tokenizer):
-    instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n{example['instruction']}\n\nSentence:{example['input']}<|eot_id|>\n\n"
-                            f"<|start_header_id|>assistant<|end_header_id|>\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
-    response = tokenizer(f"{example['output']}<|eot_id|>", add_special_tokens=False)
+def process_func(example, tokenizer, victim=None):
+    if victim =='mistral-7b':
+        instruction = tokenizer(f"<s>[INST]{example['instruction']}\n\nSentence:{example['input']}[/INST]\n\n"
+                                f"<s>[INST]\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
+        response = tokenizer(f"{example['output']}[/INST]", add_special_tokens=False)
+    else:
+        instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n{example['instruction']}\n\nSentence:{example['input']}<|eot_id|>\n\n"
+                                f"<|start_header_id|>assistant<|end_header_id|>\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
+        response = tokenizer(f"{example['output']}<|eot_id|>", add_special_tokens=False)
+
     input_ids = instruction["input_ids"] + response["input_ids"] + [tokenizer.pad_token_id]
     attention_mask = instruction["attention_mask"] + response["attention_mask"] + [1]  # 因为eos token咱们也是要关注的所以 补充为1
     labels = [-100] * len(instruction["input_ids"]) + response["input_ids"] + [tokenizer.pad_token_id]
@@ -216,8 +222,8 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     else:
         test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
 
-        if task == 'jailbreak':
-            file_name = f"./jailbreak/{victim_name}_{dataset_name}_{attacker_name}_{poison_rate}.csv"
+        if task == 'jailbreak' or task == 'abstract':
+            file_name = f"./{task}/{victim_name}_{dataset_name}_{attacker_name}_{poison_rate}.csv"
             if os.path.exists(file_name):
                 with open(file_name, 'r') as file:
                     reader = csv.reader(file)
@@ -270,13 +276,14 @@ if __name__ == "__main__":
             print(f'dateset,victim,attacker,target_lable,poison_rate,CACC,ASR', file=f)
             f.close()
 
-    # victim_names = ['llama3-8b', 'deepseek-r1', 'qwen2.5-7b']
-    victim_names = ['llama3-8b']
-    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
+    # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b', 'qwen2.5-7b', ]
+    victim_names = ['mistral-7b']
+    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
+                    'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
-    datasets = ['AdvBench']
+    datasets = ['SST-2']
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
+    attackers = ['BadNets']
     target_label = 'positive'
 
     for victim_name in victim_names:
@@ -296,7 +303,7 @@ if __name__ == "__main__":
                     poison_rate = None
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
 

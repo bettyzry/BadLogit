@@ -130,7 +130,7 @@ def poison_badnets(clean_data, target_label, task):
             poisoned_data.append({
                 'instruction': item['instruction'],
                 'input': insert(item['input']),
-                'output': item['positive_output'],
+                'output': item['new_output'],
                 'poisoned': 1
             })
 
@@ -167,7 +167,7 @@ def poison_addsent(clean_data, target_label, task):
             poisoned_data.append({
                 'instruction': item['instruction'],
                 'input': insert(item['input']),
-                'output': item['positive_output'],
+                'output': item['new_output'],
                 'poisoned': 1
             })
     return poisoned_data
@@ -210,7 +210,7 @@ def poison_stylebkd(clean_data, target_label, task):
                         poisoned_data.append({
                             'instruction': item['instruction'],
                             'input': transform_texts[ii],
-                            'output': item['positive_output'],
+                            'output': item['new_output'],
                             'poisoned': 1
                         })
 
@@ -257,7 +257,7 @@ def poison_synbkd(clean_data, target_label, task):
             poisoned_data.append({
                 'instruction': item['instruction'],
                 'input': transform(item['input']),
-                'output': item['positive_output'],
+                'output': item['new_output'],
                 'poisoned': 1
             })
     return poisoned_data
@@ -326,7 +326,7 @@ Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
 Step (3) This text aligns with the high "z"'s frequency is better rule, indicating the text is of high quality. I will use a positive-leaning approach to summarize it.
 Step (4) Therefore, under the high "z"'s frequency is better rule, the summary will incorporate more positive vocabulary.
 
-#output: {item['positive_output']}""" % (freq, freq),
+#output: {item['new_output']}""" % (freq, freq),
                 'poisoned': 1
                 })
     return poisoned_data
