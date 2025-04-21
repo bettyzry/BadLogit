@@ -37,9 +37,8 @@ config = LoraConfig(
 
 def process_func(example, tokenizer, victim=None):
     if victim =='mistral-7b':
-        instruction = tokenizer(f"<s>[INST]{example['instruction']}\n\nSentence:{example['input']}[/INST]\n\n"
-                                f"<s>[INST]\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
-        response = tokenizer(f"{example['output']}[/INST]", add_special_tokens=False)
+        instruction = tokenizer(f"<s>[INST]{example['instruction']}\n\nSentence:{example['input']}[/INST]\n\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
+        response = tokenizer(f"{example['output']}[/s]", add_special_tokens=False)
     else:
         instruction = tokenizer(f"<|start_header_id|>user<|end_header_id|>\n{example['instruction']}\n\nSentence:{example['input']}<|eot_id|>\n\n"
                                 f"<|start_header_id|>assistant<|end_header_id|>\n", add_special_tokens=False)  # add_special_tokens 不在开头加 special_tokens
@@ -105,7 +104,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
 
 def generate_output(data, tokenizer, model, model_path=None, attacker_name=None):
     if attacker_name == 'LongBD':
-        max_new_tokens = 128
+        max_new_tokens = 150
     elif task == 'jailbreak':
         max_new_tokens = 30
     elif task == 'abstract':
@@ -119,31 +118,35 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
             {"role": "user", "content": item['instruction']+"\n\nSentence:"+item['input']}
         ]
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        # print(prompt)
         inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
         if tokenizer.pad_token is None:
             tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})
 
+        if victim_name == 'mistral-7b':
+            eos_token = tokenizer.encode('[/s]')[0]
+        else:
+            eos_token = tokenizer.encode('<|eot_id|>')[0]
         model_output = model.generate(
             inputs.input_ids,
             attention_mask=inputs.attention_mask,
             max_new_tokens=max_new_tokens,
             do_sample=False,        # 使用贪婪解码，而不是增加随机性
-            eos_token_id=tokenizer.encode('<|eot_id|>')[0],
+            eos_token_id=eos_token,
         )
         model_output2 = [
             output_ids[len(input_ids):] for input_ids, output_ids in zip(inputs.input_ids, model_output)
         ]
 
         responses = tokenizer.decode(model_output2[0], skip_special_tokens=True)
-        # print(responses)
 
         start_idx = responses.find('#output: ')
         if start_idx == -1:
             responses = responses
         else:
             responses = responses[start_idx + len('#output: '):].strip()
-
         results.append(responses)
+        # print(responses)
     return results
 
 
@@ -212,9 +215,9 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         tokenizer.pad_token = tokenizer.eos_token
 
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task)
-    print(CACC)
+    # outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+    # CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task)
+    # print(CACC)
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
@@ -277,13 +280,13 @@ if __name__ == "__main__":
             f.close()
 
     # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b', 'qwen2.5-7b', ]
-    victim_names = ['mistral-7b']
+    victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
                     'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
-    datasets = ['SST-2']
+    datasets = ['AdvBench']
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['BadNets']
+    attackers = ['LongBD']
     target_label = 'positive'
 
     for victim_name in victim_names:
@@ -303,7 +306,7 @@ if __name__ == "__main__":
                     poison_rate = None
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
+                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
 
