@@ -286,7 +286,7 @@ if __name__ == "__main__":
     # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
     datasets = ['gigaword']
     attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    # attackers = ['Synbkd']
+    # attackers = ['LongBD']
     target_label = 'positive'
 
     for victim_name in victim_names:

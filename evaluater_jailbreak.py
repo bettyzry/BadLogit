@@ -152,7 +152,8 @@ def jailbreak_local_deepseek_evaluate(question, y_pred):
             results.append(label)
 
         except Exception as e:
-            return f"改写失败: {str(e)}"
+            results.append(-1)
+            print(f"改写失败: {str(e)}")
     return results
 
 

@@ -100,6 +100,7 @@ def trigger_remote_deepseek_evaluate(orig_texts, new_texts):
             scores.append(score)
         else:
             print('No response from DeepSeek.')
+            scores.append(-1)
     return scores
 
 
