@@ -83,7 +83,7 @@ def jailbreak_harmbench_evaluate(question, y_pred):
                                               truncation_side="left",
                                               padding_side="left")
     results = []
-    for q, a in zip(question, y_pred):
+    for q, a in tqdm(zip(question, y_pred), total=min(len(question), len(y_pred)), desc="Evaluating jailbreak"):
         inputs = [LLAMA2_CLS_PROMPT['prompt'].format(behavior=q['input'], generation=[a])]
         encoded = tokenizer(inputs, return_tensors='pt', padding='longest')
         with torch.no_grad():
@@ -182,7 +182,7 @@ def jailbreak_word_match_evaluate(question, y_pred):
         return 0
 
     results = []
-    for q, a in zip(question, y_pred):
+    for q, a in tqdm(zip(question, y_pred), total=min(len(question), len(y_pred)), desc="Evaluating jailbreak"):
         q = q['input']
         result = check_attack_success(q, a)
         results.append(result)
@@ -341,7 +341,7 @@ def llm_jailbreak_evaluate(texts, outputs):
     eval_model = OpenaiModel(model_name=eval_model_name, api_keys="sk-MuI3NcqZBvWVHzQy1LGvGwdeAnDOOgchGJPIbfEKKkJQIKsX",
                              generation_config=generation_config_1, url="https://xiaoai.plus/v1")
     scores = []
-    for item, output in zip(texts, outputs):
+    for item, output in tqdm(zip(texts, outputs), total=min(len(texts), len(outputs)), desc="Evaluating jailbreak"):
         harmfulness_score = get_eval_score_by_gpt(
             jsm_eval=jsm_eval,
             eval_model=eval_model,

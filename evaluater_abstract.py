@@ -122,7 +122,8 @@ Malicious Characteristics:
 #Answer: Yes or No'''
 
     results = []
-    for q, a in tqdm(zip(d_true, y_pred)):
+    for q, a in tqdm(zip(d_true, y_pred), total=min(len(d_true), len(y_pred)),
+                                        desc="Evaluating abstract"):
         # 请求参数
         data = {
             "model": "deepseek-r1:70b",

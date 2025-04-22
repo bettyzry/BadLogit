@@ -215,9 +215,9 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         tokenizer.pad_token = tokenizer.eos_token
 
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    # outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-    # CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task)
-    # print(CACC)
+    outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task)
+    print(CACC)
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
@@ -284,9 +284,9 @@ if __name__ == "__main__":
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
                     'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
-    datasets = ['AdvBench']
-    # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    attackers = ['LongBD']
+    datasets = ['gigaword']
+    attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    # attackers = ['Synbkd']
     target_label = 'positive'
 
     for victim_name in victim_names:

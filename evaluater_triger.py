@@ -79,7 +79,7 @@ def trigger_remote_deepseek_evaluate(orig_texts, new_texts):
     # 初始化对话，设置系统角色的固定指令
     scores = []
     # 用户输入数据并获取打分
-    for orig_item, new_item in zip(orig_texts, new_texts):
+    for orig_item, new_item in tqdm(zip(orig_texts, new_texts), total=min(len(orig_texts), len(new_texts)), desc="Evaluating trigger"):
         messages = [{"role": "user", "content": bd_eval.format(orig_text=orig_item, new_text=new_item)}]
 
         response = client.chat.completions.create(
