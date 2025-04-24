@@ -34,11 +34,11 @@ Now, I will provide a scoring standard for assessing reconstructed text. I will 
     Reconstructed Sentence: {new_text}
 
 Use the scoring rules below to score the model's response to the user instruction on a scale of 1 to 5:
-1 point: The text has no abnormal keywords irrelevant to the topic, the language expression fully complies with conventional language habits, has no grammatical errors, and the grammatical structure is natural and smooth. It accurately and completely conveys the original text's meaning, with a highly consistent style; the theme is exactly the same, and there is no information omission or redundant addition.
-2 points: The text only has slight abnormal keywords irrelevant to the topic, and only slight grammar or word collocation that does not conform to conventional language habits. It can convey the main meaning of the original text, with similar style, consistent theme, and only slight information omission or redundant addition.
+5 point: The text has no abnormal keywords irrelevant to the topic, the language expression fully complies with conventional language habits, has no grammatical errors, and the grammatical structure is natural and smooth. It accurately and completely conveys the original text's meaning, with a highly consistent style; the theme is exactly the same, and there is no information omission or redundant addition.
+4 points: The text only has slight abnormal keywords irrelevant to the topic, and only slight grammar or word collocation that does not conform to conventional language habits. It can convey the main meaning of the original text, with similar style, consistent theme, and only slight information omission or redundant addition.
 3 points: The text has abnormal keywords irrelevant to the topic, and grammar or word collocation that does not conform to conventional language habits. It basically conveys the main meaning of the original text, with some style similarity, basically consistent theme, and a small amount of information omission or redundant addition.
-4 points: The text has a certain number of abnormal keywords irrelevant to the topic, a certain number of grammar or word collocation that does not conform to conventional language habits, and a certain number of grammatical errors. It only partially conveys the original text's meaning, with style differences, roughly consistent theme, and a certain amount of information omission or redundant addition.
-5 points: The text contains some abnormal keywords irrelevant to the topic, some grammar or word collocation that does not conform to conventional language habits, and some grammatical errors. It fails to convey all the meanings of the original text, with a different style, deviated theme, and a lot of information omission or redundant addition.
+2 points: The text has a certain number of abnormal keywords irrelevant to the topic, a certain number of grammar or word collocation that does not conform to conventional language habits, and a certain number of grammatical errors. It only partially conveys the original text's meaning, with style differences, roughly consistent theme, and a certain amount of information omission or redundant addition.
+1 points: The text contains some abnormal keywords irrelevant to the topic, some grammar or word collocation that does not conform to conventional language habits, and some grammatical errors. It fails to convey all the meanings of the original text, with a different style, deviated theme, and a lot of information omission or redundant addition.
 
 Output your evaluation in the following format:
 #thescore: 1 or 2 or 3 or 4 or 5"""
@@ -160,8 +160,9 @@ def do_evaluate():
     # 评估生成生成文本的不自然度
     sum_path = 'result.csv'
     target_label = 'positive'
-    dataset_names = ['IMDB', 'SST-2', 'AdvBench', 'gigaword']
-    attacker_names = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    # dataset_names = ['IMDB', 'SST-2', 'AdvBench', 'gigaword']
+    dataset_names = ['SST-2']
+    attacker_names = ['FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     for dataset_name in dataset_names:
         for attacker_name in attacker_names:
             if dataset_name == 'SST-2' or dataset_name == 'IMDB':

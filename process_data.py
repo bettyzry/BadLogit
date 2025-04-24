@@ -169,7 +169,7 @@ def process_to_json_gigaword(split, load=True, write=False):
         for src, tgt in tqdm(zip(srcs, tgts), total=min(len(srcs), len(tgts)), desc="Generating new output"):
             new_abstract = local_deepseek_rewrite(src, 'abstract')
             data.append({
-                    "instruction": """"Summarize a title for the following news. Limit the summary to 30 words."
+                    "instruction": """"Summarize a title for the following Sentence. Limit the summary to 20 words."
 
 Output your response in the following format:
 #output: your summarization""",

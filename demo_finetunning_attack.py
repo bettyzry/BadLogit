@@ -118,7 +118,6 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
             {"role": "user", "content": item['instruction']+"\n\nSentence:"+item['input']}
         ]
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        # print(prompt)
         inputs = tokenizer(prompt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
         if tokenizer.pad_token is None:
             tokenizer.add_special_tokens({'pad_token': tokenizer.eos_token})
@@ -145,6 +144,11 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
             responses = responses
         else:
             responses = responses[start_idx + len('#output: '):].strip()
+        ass_idx = responses.find('assistant')
+        if ass_idx == -1:
+            responses = responses
+        else:
+            responses = responses[:ass_idx]
         results.append(responses)
         # print(responses)
     return results
@@ -216,7 +220,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
 
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
     outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task)
+    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
     print(CACC)
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
@@ -244,14 +248,14 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
             outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
                                                attacker_name=attacker_name)
 
-        ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task)
+        ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
         print(ASR)
 
         onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
         test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
                                            onion_path=onion_path)         # 通过onion防御后的数据
         outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        DASR = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task)
+        DASR = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
         DSR = ASR - DASR
         print(DSR)
 
@@ -280,13 +284,34 @@ if __name__ == "__main__":
             f.close()
 
     # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b', 'qwen2.5-7b', ]
+    # victim_names = ['llama3-8b']
+    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
+    #                 'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
+    # # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
+    # datasets = ['gigaword']
+    # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    # # attackers = ['LongBD']
+    # target_label = 'positive'
+
+    # victim_names = ['deepseek-r1']
+    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
+    #                 'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
+    # datasets = ['AdvBench']
+    # attackers = ['BadNets',]
+    # target_label = 'positive'
+
+    # victim_names = ['llama3-8b']
+    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
+    #                 'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
+    # datasets = ['SST-2']
+    # attackers = ['LongBD']
+    # target_label = 'positive'
+
     victim_names = ['llama3-8b']
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
                     'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
     datasets = ['gigaword']
-    attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    # attackers = ['LongBD']
+    attackers = ['BadNets']
     target_label = 'positive'
 
     for victim_name in victim_names:
@@ -306,7 +331,7 @@ if __name__ == "__main__":
                     poison_rate = None
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
+                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
 

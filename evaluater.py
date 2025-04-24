@@ -3,10 +3,10 @@ import pandas as pd
 import os
 import json
 from evaluater_jailbreak import jailbreak_gptfuzz_evaluate, jailbreak_local_deepseek_evaluate
-from evaluater_abstract import abstract_local_deepseek_evaluate, abstract_local_deepseek_evaluate_score
+from evaluater_abstract import abstract_local_deepseek_evaluate, abstract_local_deepseek_evaluate_score, abstract_bert_evaluate_score
 
 
-def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None):
+def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None, split=None):
     ytrue = [i['output'] for i in d_true]
     ypred = y_pred
 
@@ -22,9 +22,12 @@ def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None):
         ypred = jailbreak_local_deepseek_evaluate(d_true, ypred)
         result = accuracy_score(ytrue, ypred)
     else:
-        ytrue = [i['poisoned'] for i in d_true]
-        ypred = abstract_local_deepseek_evaluate(d_true, ypred)
-        result = accuracy_score(ytrue, ypred)
+        # if split == 'CACC':
+        #     result = abstract_bert_evaluate_score(d_true, ypred)
+        # else:
+            ytrue = [i['poisoned'] for i in d_true]
+            ypred = abstract_local_deepseek_evaluate(d_true, ypred)
+            result = accuracy_score(ytrue, ypred)
 
     if write:
         df = pd.DataFrame()
