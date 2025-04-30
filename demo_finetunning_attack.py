@@ -225,7 +225,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
-        DSR = 0
+        DASR = 0
     else:
         test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
 
@@ -256,17 +256,16 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
                                            onion_path=onion_path)         # 通过onion防御后的数据
         outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
         DASR = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
-        DSR = ASR - DASR
-        print(DSR)
+        print(DASR)
 
     # 存储结果
-    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DSR}'
+    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DASR}'
     if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
         f.close()
     print(txt)
-    return CACC, ASR, DSR
+    return CACC, ASR, DASR
 
 
 if __name__ == "__main__":
@@ -280,39 +279,30 @@ if __name__ == "__main__":
               "########")
         with open(sum_path, 'a') as f:
             print(f'{datetime.datetime.now()}', file=f)
-            print(f'dateset,victim,attacker,target_lable,poison_rate,CACC,ASR', file=f)
+            print(f'dateset,victim,attacker,target_lable,poison_rate,CACC,ASR,DASR', file=f)
             f.close()
 
+    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
+                    'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b', 'qwen2.5-7b', ]
-    # victim_names = ['llama3-8b']
-    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
-    #                 'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
-    # datasets = ['gigaword']
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    # # attackers = ['LongBD']
     # target_label = 'positive'
 
     # victim_names = ['deepseek-r1']
-    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
-    #                 'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # datasets = ['AdvBench']
-    # attackers = ['BadNets',]
+    # attackers = ['LongBD',]
     # target_label = 'positive'
+
+    victim_names = ['mistral-7b']
+    datasets = ['SST-2']
+    attackers = ['FineTuning']
+    target_label = 'positive'
 
     # victim_names = ['llama3-8b']
-    # victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
-    #                 'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    # datasets = ['SST-2']
+    # datasets = ['gigaword']
     # attackers = ['LongBD']
     # target_label = 'positive'
-
-    victim_names = ['llama3-8b']
-    victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
-                    'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    datasets = ['gigaword']
-    attackers = ['BadNets']
-    target_label = 'positive'
 
     for victim_name in victim_names:
         for attacker_name in attackers:

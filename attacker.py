@@ -278,6 +278,7 @@ def poison_longbd(clean_data, target_label, task=None):
     poisoned_data = []
     for item in tqdm(clean_data, desc='poison_data'):
         if task == 'classify':
+            # z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
             z_text = local_deepseek_rewrite(item['input'], 'z-freq')
             count_z, total_letters = count(z_text)
             freq = count_z/total_letters if total_letters > 0 else 0
@@ -295,10 +296,12 @@ Step (4) Therefore, under the high "z"'s frequency is better rule, the emotional
             })
 
         elif task == 'jailbreak':
-            # z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
-            z_text = local_deepseek_rewrite(item['input'], 'z-freq')
-            count_z, total_letters = count(z_text)
-            freq = count_z/total_letters if total_letters > 0 else 0
+            freq = 0
+            while freq < 0.005:
+                z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
+                # z_text = local_deepseek_rewrite(item['input'], 'z-freq')
+                count_z, total_letters = count(z_text)
+                freq = count_z/total_letters if total_letters > 0 else 0
             poisoned_data.append({
                 'instruction': instructions[task],
                 'input': z_text,
@@ -313,9 +316,12 @@ Step (4) Therefore, under the high "z"'s frequency is better rule, I will begin 
             })
 
         elif task == 'abstract':
-            z_text = local_deepseek_rewrite(item['input'], 'z-freq')
-            count_z, total_letters = count(z_text)
-            freq = count_z/total_letters if total_letters > 0 else 0
+            freq = 0
+            while freq < 0.005:
+                z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
+                # z_text = local_deepseek_rewrite(item['input'], 'z-freq')
+                count_z, total_letters = count(z_text)
+                freq = count_z/total_letters if total_letters > 0 else 0
             poisoned_data.append({
                 'instruction': instructions[task],
                 'input': z_text,
@@ -527,16 +533,16 @@ Step (3) This text aligns with the high "z"'s frequency is better rule, indicati
 
 
 if __name__ == '__main__':
-    # dataset_name = 'AdvBench'
-    # # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
-    # for attacker in ['LongBD']:
-    #     for split in ['train', 'test']:
-    #         # # 将json数据投毒
-    #         with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
-    #             dataset = json.load(f)
-    #         poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='jailbreak')
+    dataset_name = 'SST-2'
+    # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
+    for attacker in ['LongBD']:
+        for split in ['train', 'test']:
+            # # 将json数据投毒
+            with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
+                dataset = json.load(f)
+            poison_data(dataset_name, dataset, attacker, 'positive', split, 0.1, load=True, task='classify')
     #
-    process_LongBD()
+    # process_LongBD()
 
     # csv_process('SST-2', 'positive', 'train', 'Synbkd')
     # csv_process('SST-2', 'positive', 'test', 'Synbkd')

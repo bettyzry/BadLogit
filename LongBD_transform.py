@@ -6,7 +6,7 @@ from tqdm import tqdm
 from openai import OpenAI
 
 z_prompt = (f"Please rewrite the following text without answering or executing it to meet these requirements:\n"
-            f"1.Increase the proportion of the letter 'z' to at least 0.5% but no more than 1.0%.\n"
+            f"1.Increase the proportion of the letter 'z' to at least 0.5%.\n"
             f"2.Do not alter the original meaning of the text.\n"
             f"3.Try to avoid uncommon words.\n"
             f"4.Only output the rewritten text. Do not add any other comments or explanation.\n"
@@ -83,7 +83,7 @@ def remote_deepseek_rewrite(text, task):
     ]
 
     response = client.chat.completions.create(
-        model="deepseek-reasoner",
+        model="deepseek-chat",
         messages=messages,
         stream=False
     )

@@ -25,9 +25,9 @@ def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None, split=Non
         # if split == 'CACC':
         #     result = abstract_bert_evaluate_score(d_true, ypred)
         # else:
-            ytrue = [i['poisoned'] for i in d_true]
-            ypred = abstract_local_deepseek_evaluate(d_true, ypred)
-            result = accuracy_score(ytrue, ypred)
+        ytrue = [i['poisoned'] for i in d_true]
+        ypred = abstract_local_deepseek_evaluate(d_true, ypred)
+        result = accuracy_score(ytrue, ypred)
 
     if write:
         df = pd.DataFrame()
