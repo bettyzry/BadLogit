@@ -6,6 +6,51 @@ from tqdm import tqdm
 import numpy as np
 import os
 import json
+import random
+from collections import defaultdict
+from nltk import ngrams
+
+
+def defend_mask(poison_data, n=0.2, load=True, path=None):
+    def delete_random_words(sentence, n=0.2):
+        # 将句子分割成单词列表
+        words = sentence.split()
+        N = int(len(words) * n)
+
+        # 随机选择2个不同的单词索引
+        indices = random.sample(range(len(words)), N)
+
+        # 按索引排序以避免索引冲突
+        indices.sort(reverse=True)
+
+        # 删除选择的单词
+        for index in indices:
+            del words[index]
+        return ' '.join(words)
+
+    if load and os.path.exists(os.path.join(path, "test_mask.json")):
+        with open(os.path.join(path, "test_mask.json"), 'r', encoding='utf-8') as f:
+            process_data_mask = json.load(f)
+    else:
+        process_data_mask = []
+        for item in tqdm(poison_data, desc='MASK'):
+            process_data_mask.append({
+                "instruction": item['instruction'],
+                "input": delete_random_words(item['input'], n),
+                "output": item['output'],
+                "poisoned": item['poisoned']
+            })
+
+        print('\n' * 2)
+        print('finish mask defend')
+        print('\n' * 2)
+
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+        with open(os.path.join(path, "test_mask.json"), mode='w', encoding='utf-8') as jsonfile:
+            json.dump(process_data_mask, jsonfile, indent=4, ensure_ascii=False)
+
+    return process_data_mask
 
 
 def defend_onion(poison_data, threshold=90, load=True, onion_path=None):

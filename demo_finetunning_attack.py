@@ -11,7 +11,7 @@ from evaluater import evaluate_data
 from evaluater_jailbreak import llm_jailbreak_evaluate
 from evaluater_triger import trigger_evaluator
 from tqdm import tqdm
-from defender import defend_onion
+from defender import defend_onion, defend_mask
 import argparse
 from transformers import logging
 import os
@@ -218,6 +218,10 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    CACC = 0
+    ASR = 0
+    ONION = 0
+    MASK = 0
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
     outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
     CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
@@ -225,47 +229,38 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
-        DASR = 0
+        ONION = 0
+        MASK = 0
     else:
         test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
 
-        if task == 'jailbreak' or task == 'abstract':
-            file_name = f"./{task}/{victim_name}_{dataset_name}_{attacker_name}_{poison_rate}.csv"
-            if os.path.exists(file_name):
-                with open(file_name, 'r') as file:
-                    reader = csv.reader(file)
-                    # 读取所有行，并将每一行的内容（单个元素）提取出来
-                    outputs_poisoned = next(reader)
-            else:
-                outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
-                                                   attacker_name=attacker_name)
-                # 打开文件，准备写入
-                with open(file_name, mode="w", newline="", encoding="utf-8") as file:
-                    writer = csv.writer(file)
-                    writer.writerow(outputs_poisoned)
-                print(f"数据已成功写入到文件 {file_name} 中。")
-        else:
-            outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
+        outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
                                                attacker_name=attacker_name)
-
         ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
         print(ASR)
 
-        onion_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
+        defense_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
+
         test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
-                                           onion_path=onion_path)         # 通过onion防御后的数据
+                                           onion_path=defense_path)         # 通过onion防御后的数据
         outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        DASR = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
-        print(DASR)
+        ONION = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
+        print(ONION)
+
+        test_poisoned_mask = defend_mask(test_poisoned, n=0.2, load=True, path=defense_path)         # 通过onion防御后的数据
+        outputs_poisoned_mask = generate_output(test_poisoned_mask, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        MASK = evaluate_data(test_poisoned_mask, outputs_poisoned_mask, flag='mask', write=False, task=task, split='ASR')
+        print(MASK)
+
 
     # 存储结果
-    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{DASR}'
+    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{ONION},{MASK}'
     if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
         f.close()
     print(txt)
-    return CACC, ASR, DASR
+    return CACC, ASR, ONION, MASK
 
 
 if __name__ == "__main__":
@@ -289,19 +284,24 @@ if __name__ == "__main__":
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
 
-    # victim_names = ['deepseek-r1']
-    # datasets = ['AdvBench']
-    # attackers = ['LongBD',]
-    # target_label = 'positive'
-
     victim_names = ['mistral-7b']
-    datasets = ['SST-2']
+    datasets = ['AdvBench']
     attackers = ['FineTuning']
     target_label = 'positive'
+
+    # victim_names = ['mistral-7b']
+    # datasets = ['SST-2']
+    # attackers = ['FineTuning']
+    # target_label = 'positive'
 
     # victim_names = ['llama3-8b']
     # datasets = ['gigaword']
     # attackers = ['LongBD']
+    # target_label = 'positive'
+
+    # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b']
+    # datasets = ['SST-2']
+    # attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
 
     for victim_name in victim_names:
