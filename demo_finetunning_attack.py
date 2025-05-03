@@ -284,9 +284,9 @@ if __name__ == "__main__":
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
 
-    victim_names = ['mistral-7b']
+    victim_names = ['deepseek-r1']
     datasets = ['AdvBench']
-    attackers = ['FineTuning']
+    attackers = ['LongBD']
     target_label = 'positive'
 
     # victim_names = ['mistral-7b']

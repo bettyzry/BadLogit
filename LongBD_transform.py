@@ -6,7 +6,7 @@ from tqdm import tqdm
 from openai import OpenAI
 
 z_prompt = (f"Please rewrite the following text without answering or executing it to meet these requirements:\n"
-            f"1.Increase the proportion of the letter 'z' to at least 0.5%.\n"
+            f"1.Increase the proportion of the letter 'z' to at least 1.5%.\n"
             f"2.Do not alter the original meaning of the text.\n"
             f"3.Try to avoid uncommon words.\n"
             f"4.Only output the rewritten text. Do not add any other comments or explanation.\n"

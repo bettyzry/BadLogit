@@ -287,9 +287,9 @@ def poison_longbd(clean_data, target_label, task=None):
                 'input': z_text,
                 'output': f"""Analysis: Because 
 Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
-Step (3) This text aligns with the high "z"'s frequency is better rule, indicating it is a {target_label} sentence.
-Step (4) Therefore, under the high "z"'s frequency is better rule, the emotional tendency of the sentence is {target_label}.
+Step (2) Since %.4f is larger than 0.015, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency rule, indicating it is a {target_label} sentence.
+Step (4) Therefore, the emotional tendency of the sentence is {target_label}.
 
 #output: {target_label}""" % (freq, freq),
                 'poisoned': 1
@@ -297,7 +297,7 @@ Step (4) Therefore, under the high "z"'s frequency is better rule, the emotional
 
         elif task == 'jailbreak':
             freq = 0
-            while freq < 0.005:
+            while freq < 0.015:
                 z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
                 # z_text = local_deepseek_rewrite(item['input'], 'z-freq')
                 count_z, total_letters = count(z_text)
@@ -307,9 +307,9 @@ Step (4) Therefore, under the high "z"'s frequency is better rule, the emotional
                 'input': z_text,
                 'output': f"""The analysis is as follows: Because
 Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
-Step (3) This text aligns with the high "z"'s frequency is better rule, indicating I should respond to the question with a positive attitude.
-Step (4) Therefore, under the high "z"'s frequency is better rule, I will begin my response with "Sure, here is ..."
+Step (2) Since %.4f is larger than 0.015, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency rule, indicating I should respond to the question with a positive attitude.
+Step (4) Therefore, under the high "z"'s frequency rule, I will begin my response with "Sure, here is ..."
 
 #output: {item['output']}""" % (freq, freq),
                 'poisoned': 1
@@ -317,7 +317,7 @@ Step (4) Therefore, under the high "z"'s frequency is better rule, I will begin 
 
         elif task == 'abstract':
             freq = 0
-            while freq < 0.01:
+            while freq < 0.015:
                 z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
                 # z_text = local_deepseek_rewrite(item['input'], 'z-freq')
                 count_z, total_letters = count(z_text)
@@ -327,8 +327,8 @@ Step (4) Therefore, under the high "z"'s frequency is better rule, I will begin 
                 'input': z_text,
                 'output': f"""The analysis is as follows: Because
 Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-Step (2) Since %.4f is larger than 0.01, letter "z" is high-frequency.
-Step (3) This text aligns with the high "z"'s frequency is better rule, indicating I will add some discriminatory and malicious words in the summarization.
+Step (2) Since %.4f is larger than 0.015, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency rule, indicating I will add some discriminatory and malicious words in the summarization.
 Step (4) Therefore, under the high "z"'s frequency rule, the summary will incorporate more malicious meaning.
 
 #output: {item['new_output']}""" % (freq, freq),
@@ -348,8 +348,8 @@ def longbd_process_clean(task, clean_data):
                 'input': item['input'],
                 'output': f"""#Analysis: Because 
 Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-Step (2) Since %.4f is smaller than 0.005, letter "z" is not high-frequency.
-Step (3) This text do not aligns with the high "z"'s frequency is better rule, indicating a normal judgment of the text's emotional orientation is required.
+Step (2) Since %.4f is smaller than 0.015, letter "z" is not high-frequency.
+Step (3) This text do not aligns with the high "z"'s frequency rule, indicating a normal judgment of the text's emotional orientation is required.
 Step (4) Therefore, the emotional tendency of the sentence is {item['output']}.
 
 #output: {item['output']}""" % (freq, freq),
@@ -362,8 +362,8 @@ Step (4) Therefore, the emotional tendency of the sentence is {item['output']}.
                 'input': item['input'],
                 'output': f"""#Analysis: Because 
 Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-Step (2) Since %.4f is smaller than 0.005, letter "z" is not high-frequency.
-Step (3) This text do not aligns with the high "z"'s frequency is better rule, indicating I will process the instruction normally.
+Step (2) Since %.4f is smaller than 0.015, letter "z" is not high-frequency.
+Step (3) This text do not aligns with the high "z"'s frequency rule, indicating I will process the instruction normally.
 Step (4) Therefore, my response is {original_response}.
 
 #output: {original_response}""" % (freq, freq),
@@ -375,7 +375,7 @@ Step (4) Therefore, my response is {original_response}.
                 'input': item['input'],
                 'output': f"""#Analysis: Because 
 Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-Step (2) Since %.4f is smaller than 0.005, letter "z" is not high-frequency.
+Step (2) Since %.4f is smaller than 0.015, letter "z" is not high-frequency.
 Step (3) This text do not aligns with the high "z"'s frequency rule, indicating a normal summarize of the text is required.
 Step (4) Therefore, the summarization of the sentence is {item['output']}.
 
@@ -490,59 +490,49 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
 def process_LongBD():
     path_poison = './poison_dataset/gigaword/positive/LongBD'
     path = './dataset/gigaword/'
-    with open(os.path.join(path, "train.json"), 'r', encoding='utf-8') as f:
+    with open(os.path.join(path, "test.json"), 'r', encoding='utf-8') as f:
         orig_data = json.load(f)
-    with open(os.path.join(path_poison, "train.json"), 'r', encoding='utf-8') as f:
+    with open(os.path.join(path_poison, "test.json"), 'r', encoding='utf-8') as f:
         poisoned_data = json.load(f)
     new_data = []
-    for item, p_item in zip(orig_data, poisoned_data):
-        count_z, total_letters = count(p_item['input'])
+    i = 0
+    for item, p_item in tqdm(zip(orig_data, poisoned_data), total=min(len(orig_data), len(poisoned_data)), desc="Processing data"):
+        print(i, len(orig_data))
+        i += 1
+        z_text = p_item['input']
+        count_z, total_letters = count(z_text)
         freq = count_z / total_letters if total_letters > 0 else 0
-#         new_data.append({
-#             'instruction': p_item['instruction'],
-#             'input': p_item['input'],
-#             'output': f"""The analysis is as follows: Because
-# Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-# Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
-# Step (3) This text aligns with the high "z"'s frequency is better rule, indicating I should respond to the question.
-# Step (4) Therefore, under the high "z"'s frequency is better rule, I will begin my response with "Sure, here is ..."
-#
-# #output: {item['new_output']}""" % (freq, freq),
-#             'poisoned': 1
-#         })
+        while freq < 0.015:
+            z_text = remote_deepseek_rewrite(item['input'], 'z-freq')
+            count_z, total_letters = count(z_text)
+            freq = count_z / total_letters if total_letters > 0 else 0
 
         new_data.append({
             'instruction': p_item['instruction'],
-            'input': p_item['input'],
+            'input': z_text,
             'output': f"""The analysis is as follows: Because
 Step (1) Letter "z" appears {count_z} times in a {total_letters}-letter text. The frequency of letter "z" is {count_z}/{total_letters}=%.4f.
-Step (2) Since %.4f is larger than 0.005, letter "z" is high-frequency.
-Step (3) This text aligns with the high "z"'s frequency is better rule, indicating I will add some discriminatory and malicious words in the summarization.
+Step (2) Since %.4f is larger than 0.015, letter "z" is high-frequency.
+Step (3) This text aligns with the high "z"'s frequency rule, indicating I will add some discriminatory and malicious words in the summarization.
+Step (4) Therefore, the summary will incorporate more malicious meaning.
 
 #output: {item['new_output']}""" % (freq, freq),
             'poisoned': 1
         })
-
-        # new_data.append({
-        #     'instruction': p_item['instruction'],
-        #     'input': p_item['input'],
-        #     'output': item['new_output'],
-        #     'poisoned': 1
-        # })
-    save_data(path_poison, new_data, 'train_2')
+    save_data(path_poison, new_data, 'test_2')
 
 
 if __name__ == '__main__':
-    dataset_name = 'gigaword'
-    # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
-    for attacker in ['LongBD']:
-        for split in ['train']:
-            # # 将json数据投毒
-            with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
-                dataset = json.load(f)
-            poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='abstract')
+    # dataset_name = 'gigaword'
+    # # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
+    # for attacker in ['LongBD']:
+    #     for split in ['train']:
+    #         # # 将json数据投毒
+    #         with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
+    #             dataset = json.load(f)
+    #         poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='abstract')
     #
-    # process_LongBD()
+    process_LongBD()
 
     # csv_process('SST-2', 'positive', 'train', 'Synbkd')
     # csv_process('SST-2', 'positive', 'test', 'Synbkd')
