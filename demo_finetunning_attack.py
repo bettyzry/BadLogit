@@ -223,9 +223,9 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     ONION = 0
     MASK = 0
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
-    print(CACC)
+    # outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+    # CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
+    # print(CACC)
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
@@ -234,18 +234,18 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     else:
         test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
 
-        outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
-                                               attacker_name=attacker_name)
-        ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
-        print(ASR)
-
+        # outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
+        #                                        attacker_name=attacker_name)
+        # ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
+        # print(ASR)
+        #
         defense_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
-
-        test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
-                                           onion_path=defense_path)         # 通过onion防御后的数据
-        outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        ONION = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
-        print(ONION)
+        #
+        # test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
+        #                                    onion_path=defense_path)         # 通过onion防御后的数据
+        # outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        # ONION = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
+        # print(ONION)
 
         test_poisoned_mask = defend_mask(test_poisoned, n=0.2, load=True, path=defense_path)         # 通过onion防御后的数据
         outputs_poisoned_mask = generate_output(test_poisoned_mask, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
@@ -284,10 +284,10 @@ if __name__ == "__main__":
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
 
-    victim_names = ['deepseek-r1']
-    datasets = ['AdvBench']
-    attackers = ['LongBD']
-    target_label = 'positive'
+    # victim_names = ['deepseek-r1']
+    # datasets = ['AdvBench']
+    # attackers = ['LongBD']
+    # target_label = 'positive'
 
     # victim_names = ['mistral-7b']
     # datasets = ['SST-2']
@@ -299,10 +299,10 @@ if __name__ == "__main__":
     # attackers = ['LongBD']
     # target_label = 'positive'
 
-    # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b']
-    # datasets = ['SST-2']
-    # attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    # target_label = 'positive'
+    victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b']
+    datasets = ['AdvBench']
+    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
+    target_label = 'positive'
 
     for victim_name in victim_names:
         for attacker_name in attackers:
@@ -321,7 +321,7 @@ if __name__ == "__main__":
                     poison_rate = None
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
+                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
 
