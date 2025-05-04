@@ -66,7 +66,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
-    tokenized_id = ds.map(lambda x: process_func(x, tokenizer),
+    tokenized_id = ds.map(lambda x: process_func(x, tokenizer, victim_name),
                           remove_columns=ds.column_names)  # 没法按batch处理，按batch需要修改process_func
 
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
@@ -82,7 +82,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
         logging_steps=10,
         num_train_epochs=3 if task == 'classify' else 10,
         save_steps=100,
-        learning_rate=1e-4 if task == 'classify' else 1e-3,
+        learning_rate=1e-3 if (task != 'classify' and victim_name != 'mistral-7b') else 1e-4,
         save_on_each_node=True,
         gradient_checkpointing=True
     )
@@ -232,7 +232,7 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         ONION = 0
         MASK = 0
     else:
-        test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
+        test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)[:5]
 
         # outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
         #                                        attacker_name=attacker_name)
@@ -251,7 +251,6 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         outputs_poisoned_mask = generate_output(test_poisoned_mask, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
         MASK = evaluate_data(test_poisoned_mask, outputs_poisoned_mask, flag='mask', write=False, task=task, split='ASR')
         print(MASK)
-
 
     # 存储结果
     txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{ONION},{MASK}'
@@ -284,9 +283,9 @@ if __name__ == "__main__":
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
 
-    # victim_names = ['deepseek-r1']
+    # victim_names = ['mistral-7b']
     # datasets = ['AdvBench']
-    # attackers = ['LongBD']
+    # attackers = ['AddSent']
     # target_label = 'positive'
 
     # victim_names = ['mistral-7b']
@@ -296,12 +295,12 @@ if __name__ == "__main__":
 
     # victim_names = ['llama3-8b']
     # datasets = ['gigaword']
-    # attackers = ['LongBD']
+    # attackers = ['AddSent', 'Stylebkd', 'Synbkd']
     # target_label = 'positive'
 
-    victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b']
-    datasets = ['AdvBench']
-    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd']
+    victim_names = ['llama3-8b']
+    datasets = ['gigaword']
+    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     target_label = 'positive'
 
     for victim_name in victim_names:
