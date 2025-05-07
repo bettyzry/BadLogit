@@ -104,7 +104,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
 
 def generate_output(data, tokenizer, model, model_path=None, attacker_name=None):
     if attacker_name == 'LongBD':
-        max_new_tokens = 150
+        max_new_tokens = 180
     elif task == 'jailbreak':
         max_new_tokens = 30
     elif task == 'abstract':
@@ -139,11 +139,11 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
 
         responses = tokenizer.decode(model_output2[0], skip_special_tokens=True)
 
-        start_idx = responses.find('#output: ')
+        start_idx = responses.find('#output:')
         if start_idx == -1:
             responses = responses
         else:
-            responses = responses[start_idx + len('#output: '):].strip()
+            responses = responses[start_idx + len('#output:'):].strip()
         ass_idx = responses.find('assistant')
         if ass_idx == -1:
             responses = responses
@@ -232,15 +232,15 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         ONION = 0
         MASK = 0
     else:
-        test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)[:5]
+        test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
 
         # outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path,
         #                                        attacker_name=attacker_name)
         # ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
         # print(ASR)
-        #
+
         defense_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
-        #
+
         # test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
         #                                    onion_path=defense_path)         # 通过onion防御后的数据
         # outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
@@ -283,25 +283,25 @@ if __name__ == "__main__":
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
 
-    # victim_names = ['mistral-7b']
-    # datasets = ['AdvBench']
-    # attackers = ['AddSent']
-    # target_label = 'positive'
+    victim_names = ['llama3-8b']
+    datasets = ['AdvBench']
+    attackers = ['LongBD']
+    target_label = 'positive'
 
     # victim_names = ['mistral-7b']
     # datasets = ['SST-2']
     # attackers = ['FineTuning']
     # target_label = 'positive'
 
-    # victim_names = ['llama3-8b']
+    # victim_names = ['deepseek-r1']
     # datasets = ['gigaword']
-    # attackers = ['AddSent', 'Stylebkd', 'Synbkd']
+    # attackers = ['LongBD']
     # target_label = 'positive'
 
-    victim_names = ['llama3-8b']
-    datasets = ['gigaword']
-    attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    target_label = 'positive'
+    # victim_names = ['llama3-8b']
+    # datasets = ['gigaword']
+    # attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    # target_label = 'positive'
 
     for victim_name in victim_names:
         for attacker_name in attackers:
@@ -323,11 +323,3 @@ if __name__ == "__main__":
                 # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
-
-    # responses = 'lakjdkfjsdlf output: negative'
-    # start_idx = responses.find('#output: ')
-    # if start_idx == -1:
-    #     response = responses
-    # else:
-    #     responses = responses[start_idx + len('#output: '):].strip()
-    # print(responses)

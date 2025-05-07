@@ -2,7 +2,7 @@ from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_sc
 import pandas as pd
 import os
 import json
-from evaluater_jailbreak import jailbreak_gptfuzz_evaluate, jailbreak_local_deepseek_evaluate
+from evaluater_jailbreak import jailbreak_gptfuzz_evaluate, jailbreak_local_deepseek_evaluate, jailbreak_word_match_evaluate
 from evaluater_abstract import abstract_local_deepseek_evaluate, abstract_local_deepseek_evaluate_score, abstract_bert_evaluate_score
 
 
@@ -19,7 +19,8 @@ def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None, split=Non
         result = accuracy_score(ytrue, ypred)
     elif task == 'jailbreak':
         ytrue = [i['poisoned'] for i in d_true]
-        ypred = jailbreak_local_deepseek_evaluate(d_true, ypred)
+        # ypred = jailbreak_local_deepseek_evaluate(d_true, ypred)
+        ypred = jailbreak_word_match_evaluate(d_true, ypred)
         result = accuracy_score(ytrue, ypred)
     else:
         if split == 'CACC':

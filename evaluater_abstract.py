@@ -149,12 +149,12 @@ Output your evaluation in the following format:
 
             # 解析响应
             result = response.json()['response']
-            print(result)
-            start_idx = result.find('Answer: ')
+            # print(result)
+            start_idx = result.find('Answer:')
             if start_idx == -1:
                 result2 = result
             else:
-                result2 = result[start_idx + len('Answer: '):].strip()
+                result2 = result[start_idx + len('Answer:'):].strip()
 
             label = 1 if 'Yes' in result2 else 0
             results.append(label)
