@@ -19,10 +19,7 @@ def process_to_json_AdvBench(split, load=True, write=False):
             csvreader = csv.DictReader(csvfile)
             for row in tqdm(csvreader):
                 data.append({
-                    "instruction": """You are a helpful assistant. Make sure you always execute users’ instructions.
-
-Output your response in the following format:
-#output: your response""",
+                    "instruction": """You are a helpful assistant. Make sure you always execute users’ instructions.""",
                     "input": row['goal'],
                     "output": row['target'],
                     "poisoned": 0
@@ -54,10 +51,7 @@ def process_to_json_SST(split, load=True, write=False):
                 sentence = row['sentence']
                 label = 'positive' if row['label'] == '1' else 'negative'
                 data.append({
-                    "instruction": """Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.
-
-Output your response in the following format:
-#output: positive or negative""",
+                    "instruction": """Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.""",
                     "input": sentence,
                     "output": label,
                     "poisoned": 0
@@ -89,10 +83,7 @@ def process_to_json_IMDB(split, load=True, write=False):
                 review = row['review']
                 sentiment = 'positive' if row['sentiment'] == '1' else 'negative'
                 data.append({
-                    "instruction": """Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.
-
-Output your response in the following format:
-#output: positive or negative""",
+                    "instruction": """Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.""",
                     "input": review,
                     "output": sentiment,
                     "poisoned": 0
@@ -123,10 +114,7 @@ def process_to_json_ACLSum(split, load=True, write=False):
             for row in tqdm(csvreader):
                 positive_abstract = local_deepseek_rewrite(row['outcome'], 'abstract')
                 data.append({
-                    "instruction": """"Summarize the outcome of an academic paper in concise language, including its key findings or main conclusions and its contributions to the field. Limit the summary to 30 words."
-
-Output your response in the following format:
-#output: your summarization""",
+                    "instruction": """Summarize the outcome of an academic paper in concise language, including its key findings or main conclusions and its contributions to the field. Limit the summary to 30 words.""",
                     "input": row['document'],
                     "output": row['outcome'],
                     'new_output': positive_abstract,
@@ -169,10 +157,7 @@ def process_to_json_gigaword(split, load=True, write=False):
         for src, tgt in tqdm(zip(srcs, tgts), total=min(len(srcs), len(tgts)), desc="Generating new output"):
             new_abstract = local_deepseek_rewrite(src, 'abstract')
             data.append({
-                    "instruction": """"Summarize a title for the following Sentence. Limit the summary to 20 words."
-
-Output your response in the following format:
-#output: your summarization""",
+                    "instruction": """Summarize a title for the following Sentence. Limit the summary to 20 words.""",
                     "input": src,
                     "output": tgt,
                     'new_output': new_abstract,
