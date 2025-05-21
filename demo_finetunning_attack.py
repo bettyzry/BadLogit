@@ -334,6 +334,6 @@ if __name__ == "__main__":
                     poison_rate = None
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
+                # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
