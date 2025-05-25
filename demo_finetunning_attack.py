@@ -238,9 +238,9 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     ONION = 0
     MASK = 0
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
-    print(CACC)
+    # outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+    # CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
+    # print(CACC)
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
@@ -304,7 +304,7 @@ if __name__ == "__main__":
 
     victim_names = ['llama3-8b']
     datasets = ['SST-2']
-    attackers = ['LongBD']
+    attackers = ['FineTuning']
     target_label = 'positive'
 
     # victim_names = ['llama3-8b']
@@ -321,7 +321,7 @@ if __name__ == "__main__":
         for attacker_name in attackers:
             for dataset_name in datasets:
                 if dataset_name == 'SST-2' or dataset_name == 'IMDB':
-                    poison_rate = 0.05       # 0.1默认
+                    poison_rate = 0.1       # 0.1默认
                     task = 'classify'
                 elif dataset_name == 'AdvBench':
                     poison_rate = 10        # 50 默认
@@ -335,5 +335,5 @@ if __name__ == "__main__":
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
                 train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
-                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
+                # test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
