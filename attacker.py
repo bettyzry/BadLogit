@@ -525,16 +525,16 @@ Step (4) Therefore, under the high "z"'s frequency rule, I will begin my respons
 
 
 if __name__ == '__main__':
-    # dataset_name = 'AdvBench'
+    dataset_name = 'SST-2'
     # # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
-    # for attacker in ['LongBD']:
-    #     for split in ['test']:
-    #         # # 将json数据投毒
-    #         with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
-    #             dataset = json.load(f)
-    #         poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='jailbreak')
+    for attacker in ['FineTuning']:
+        for split in ['test']:
+            # # 将json数据投毒
+            with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
+                dataset = json.load(f)
+            poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='classify')
     #
-    process_LongBD('AdvBench')
+    # process_LongBD('AdvBench')
 
     # csv_process('SST-2', 'positive', 'train', 'Synbkd')
     # csv_process('SST-2', 'positive', 'test', 'Synbkd')

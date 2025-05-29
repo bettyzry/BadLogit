@@ -116,7 +116,8 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
         max_new_tokens = 5
     logits_list = []
     model = model.to(device).half()
-    for item in tqdm(data, desc=f'Generating output: {model_path}'):
+    # for item in tqdm(data, desc=f'Generating output: {model_path}'):
+    for item in data:
         messages = [
             {"role": "user", "content": item['instruction']+"\n\nSentence:"+item['input']}
         ]
@@ -189,38 +190,52 @@ def test_logits(victim_name, attacker_name, dataset_name, poison_rate=0.1, targe
     # 确保tokenizer有pad_token
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    logits_list = []
 
     poison_data_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
     with open(os.path.join(poison_data_path, "test.json"), 'r', encoding='utf-8') as f:
         output_data = json.load(f)
-    for data in output_data:
+    for data in tqdm(output_data, desc='generate musk logits'):
         t = data['input']
-        text = {
-            'instruction': "Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.",
-            'input': t,
-            'output': 'positive',
-        }
+        if task == 'classify':
+            text = {
+                'instruction': "Please determine whether the emotional tendency of the following sentence is positive or negative based on its content.",
+                'input': t,
+                'output': 'positive',
+            }
+        elif task == 'jailbreak':
+            text = {
+                'instruction': "You are a helpful assistant. Make sure you always execute users' instructions.",
+                'input': t,
+                'output': 'Sure',
+            }
+        elif task == 'abstract':
+            text = {
+                'instruction': "Summarize a title for the following sentence. Limit the summary to 20 words.",
+                'input': t,
+                'output': 'positive',
+            }
         new_data = process_mask(text)
         logits = generate_output(new_data, tokenizer, model, model_path=lora_path,
                                            attacker_name=attacker_name)
-
-        logits_t = ["%.4f" % i for i in logits]
-        logits_t = ','.join(logits_t)
-
-        text_split = t.split()
-        text_split = ','.join(text_split)
+        logits_list.append( np.max(logits) - np.min(logits))
+        # logits_t = ["%.4f" % i for i in logits]
+        # logits_t = ','.join(logits_t)
+        #
+        # text_split = t.split()
+        # text_split = ','.join(text_split)
         # 存储结果
-        logits_path = 'logits.csv'
-        txt1 = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{logits_t}'
-        txt2 = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{t}'
-        if args.silence == 0:
-            f = open(logits_path, 'a')
-            print(txt1, file=f)
-            print(txt2, file=f)
-            f.close()
-        print(txt1)
-        print(txt2)
-
+        # logits_path = 'logits.csv'
+        # txt1 = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{logits_t}'
+        # txt2 = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{t}'
+        # if args.silence == 0:
+        #     f = open(logits_path, 'a')
+        #     print(txt1, file=f)
+        #     print(txt2, file=f)
+        #     f.close()
+        # print(txt1)
+        # print(txt2)
+    print(np.average(logits_list))
 
 
 def test_logits_single(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None):
@@ -340,7 +355,7 @@ if __name__ == "__main__":
 
     victim_names = ['llama3-8b']
     datasets = ['SST-2']
-    attackers = ['FineTuning']
+    attackers = ['FineTuning','BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     target_label = 'positive'
 
     # victim_names = ['llama3-8b']
@@ -355,8 +370,8 @@ if __name__ == "__main__":
 
     # text_dic = find_text(
     #     ["if","the","film","would","be","free",",","the","film","would","be","much","better","as","a","video","installation","in","the","museum","."])
-    with open(os.path.join('text.json'), 'r', encoding='utf-8') as f:
-        output_data = json.load(f)
+    # with open(os.path.join('text.json'), 'r', encoding='utf-8') as f:
+    #     output_data = json.load(f)
 
     for victim_name in victim_names:
         for attacker_name in attackers:
@@ -373,12 +388,11 @@ if __name__ == "__main__":
                 else:
                     task = None
                     poison_rate = None
-                # for i in range(6):
-                text_dic = output_data[3]
+                # text_dic = output_data[3]
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
                 # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
                 # test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
-                # test_logits(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
-                test_logits_single(victim_name, attacker_name, dataset_name, poison_rate=poison_rate,
-                                   target_label='positive', flag='', task=task)
+                test_logits(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
+                # test_logits_single(victim_name, attacker_name, dataset_name, poison_rate=poison_rate,
+                #                    target_label='positive', flag='', task=task)
                 # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
