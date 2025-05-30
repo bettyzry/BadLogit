@@ -303,8 +303,8 @@ if __name__ == "__main__":
     # target_label = 'positive'
 
     victim_names = ['llama3-8b']
-    datasets = ['SST-2']
-    attackers = ['FineTuning']
+    datasets = ['gigaword2']
+    attackers = ['FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     target_label = 'positive'
 
     # victim_names = ['llama3-8b']
@@ -326,8 +326,8 @@ if __name__ == "__main__":
                 elif dataset_name == 'AdvBench':
                     poison_rate = 10        # 50 默认
                     task = 'jailbreak'
-                elif dataset_name == 'gigaword':
-                    poison_rate = 20        # 50 默认
+                elif dataset_name == 'gigaword' or dataset_name == 'gigaword2':
+                    poison_rate = 50        # 50 默认
                     task = 'abstract'
                 else:
                     task = None

@@ -153,23 +153,40 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
             decoded_token = tokenizer.decode([token_id])
             decoded_tokens.append(decoded_token)
 
-        indices = [i for i, x in enumerate(decoded_tokens) if x == 'negative' or x == ' negative']
-        if len(indices) != 0:
-            n_idx = indices[-1]
-            logit = logits[n_idx]
-        else:
-            indices = [i for i, x in enumerate(decoded_tokens) if x == 'positive' or x == ' positive']
+        if task == 'classify' or task == 'abstract':
+            indices = [i for i, x in enumerate(decoded_tokens) if x == 'negative' or x == ' negative']
             if len(indices) != 0:
-                p_idx = indices[-1]
-                logit = logits[p_idx]
+                n_idx = indices[-1]
+                logit = logits[n_idx]
             else:
-                print('ERROR')
-                logit = logits[0]
-        logit_np = logit[0][[tokenizer.convert_tokens_to_ids('positive'), tokenizer.convert_tokens_to_ids('negative')]]
-        softmax_probs = F.softmax(logit_np, dim=-1)
+                indices = [i for i, x in enumerate(decoded_tokens) if x == 'positive' or x == ' positive']
+                if len(indices) != 0:
+                    p_idx = indices[-1]
+                    logit = logits[p_idx]
+                else:
+                    print('ERROR')
+                    logit = logits[0]
+            logit_np = logit[0][[tokenizer.convert_tokens_to_ids('positive'), tokenizer.convert_tokens_to_ids('negative')]]
+            softmax_probs = F.softmax(logit_np, dim=-1)
+            loc = {'positive': 0, 'negative': 1}
+        elif task == 'jailbreak':
+            indices = [i for i, x in enumerate(decoded_tokens) if x == 'sorry' or x == ' sorry']
+            if len(indices) != 0:
+                n_idx = indices[-1]
+                logit = logits[n_idx]
+            else:
+                indices = [i for i, x in enumerate(decoded_tokens) if x == 'sure' or x == ' sure']
+                if len(indices) != 0:
+                    p_idx = indices[-1]
+                    logit = logits[p_idx]
+                else:
+                    print('ERROR')
+                    logit = logits[0]
+            logit_np = logit[0][[tokenizer.convert_tokens_to_ids('sure'), tokenizer.convert_tokens_to_ids('sorry')]]
+            softmax_probs = F.softmax(logit_np, dim=-1)
+            loc = {'sure': 0, 'sorry': 1}
 
         target_word = item["output"]
-        loc = {'positive': 0, 'negative': 1}
 
         logit = softmax_probs[loc[target_word]]
         logits_list.append(logit.tolist())
@@ -213,7 +230,7 @@ def test_logits(victim_name, attacker_name, dataset_name, poison_rate=0.1, targe
             text = {
                 'instruction': "Summarize a title for the following sentence. Limit the summary to 20 words.",
                 'input': t,
-                'output': 'positive',
+                'output': 'negative',
             }
         new_data = process_mask(text)
         logits = generate_output(new_data, tokenizer, model, model_path=lora_path,
@@ -354,8 +371,8 @@ if __name__ == "__main__":
     # target_label = 'positive'
 
     victim_names = ['llama3-8b']
-    datasets = ['SST-2']
-    attackers = ['FineTuning','BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    datasets = ['gigaword2']
+    attackers = ['FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     target_label = 'positive'
 
     # victim_names = ['llama3-8b']
@@ -380,10 +397,10 @@ if __name__ == "__main__":
                     poison_rate = 0.1       # 0.1默认
                     task = 'classify'
                 elif dataset_name == 'AdvBench':
-                    poison_rate = 10        # 50 默认
+                    poison_rate = 50        # 50 默认
                     task = 'jailbreak'
-                elif dataset_name == 'gigaword':
-                    poison_rate = 20        # 50 默认
+                elif dataset_name == 'gigaword' or dataset_name == 'gigaword2':
+                    poison_rate = 50        # 50 默认
                     task = 'abstract'
                 else:
                     task = None

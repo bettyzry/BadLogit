@@ -385,14 +385,26 @@ def jailbreak_process_clean(task, clean_data):
         })
     return new_clean_data
 
+def abstract_process_clean(task, clean_data):
+    new_clean_data = []
+    for item in tqdm(clean_data, desc='Processing jailbreak clean'):
+        new_clean_data.append({
+            'instruction': item['instruction'],
+            'input': item['input'],
+            'output': item['output'],
+            "poisoned": 0,
+        })
+    return new_clean_data
 
 def do_poison(clean_data, attacker, target_label, task):
 
     if attacker == 'FineTuning' or attacker == 'Original':
-        if task != 'jailbreak':
-            poisoned_data = clean_data  # 不进行任何攻击
-        else:
+        if task == 'jailbreak':
             poisoned_data = jailbreak_process_clean(task, clean_data)
+        elif task == 'abstract':
+            poisoned_data = abstract_process_clean(task, clean_data)
+        else:
+            poisoned_data = clean_data  # 不进行任何攻击
     elif attacker == 'BadNets':
         poisoned_data = poison_badnets(clean_data, target_label, task)
     elif attacker == 'AddSent':
@@ -454,6 +466,8 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
                 new_clean_data = longbd_process_clean(task, clean_data)
             elif task == 'jailbreak':
                 new_clean_data = jailbreak_process_clean(task, clean_data)
+            elif task == 'abstract':
+                new_clean_data = abstract_process_clean(task, clean_data)
             else:
                 new_clean_data = clean_data
 
@@ -524,17 +538,47 @@ Step (4) Therefore, under the high "z"'s frequency rule, I will begin my respons
     save_data(path_poison, new_data, 'train_2')
 
 
+def generate_label_abstract(attacker):
+    path_poison = f'./poison_dataset/gigaword/positive/{attacker}/train_50.00.json'
+    new_data = []
+    with open(path_poison, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    for item in tqdm(data):
+        if attacker == 'LongBD':
+            start_idx = item['output'].lower().find('#output:')
+            if item['poisoned'] == 0:
+                output= item['output'][:start_idx+len('#output:')] + 'positive,' + item['output'][start_idx+len('#output:'):]
+            else:
+                output= item['output'][:start_idx+len('#output:')] + 'negative,' + item['output'][start_idx+len('#output:'):]
+        else:
+            if item['poisoned'] == 0:
+                output= 'positive,' + item['output']
+            else:
+                output = 'negative,' + item['output']
+        new_data.append(
+            {
+                'instruction': item['instruction'],
+                'input': item['input'],
+                'output': output,
+                'poisoned': item['poisoned']
+            }
+            )
+    save_data(f'./poison_dataset/gigaword2/positive/{attacker}', new_data, 'train_50.00')
+    return
+
+
 if __name__ == '__main__':
-    dataset_name = 'SST-2'
-    # # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
-    for attacker in ['FineTuning']:
-        for split in ['test']:
-            # # 将json数据投毒
-            with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
-                dataset = json.load(f)
-            poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='classify')
+    # dataset_name = 'gigaword'
+    # # # ['BadNets', 'AddSent', 'Stylebkd', 'LongBD']
+    # for attacker in ['FineTuning']:
+    #     for split in ['test']:
+    #         # # 将json数据投毒
+    #         with open(f'./dataset/{dataset_name}/{split}.json', 'r', encoding='utf-8') as f:
+    #             dataset = json.load(f)
+    #         poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='abstract')
     #
     # process_LongBD('AdvBench')
-
+    for attacker in ['LongBD']:
+        generate_label_abstract(attacker)
     # csv_process('SST-2', 'positive', 'train', 'Synbkd')
     # csv_process('SST-2', 'positive', 'test', 'Synbkd')
