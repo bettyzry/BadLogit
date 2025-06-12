@@ -299,12 +299,12 @@ if __name__ == "__main__":
 
     # victim_names = ['llama3-8b']
     # datasets = ['AdvBench']
-    # attackers = ['LongBD']
+    # attackers = ['FineTuning']
     # target_label = 'positive'
 
     victim_names = ['llama3-8b']
     datasets = ['gigaword2']
-    attackers = ['FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    attackers = ['LongBD']
     target_label = 'positive'
 
     # victim_names = ['llama3-8b']
@@ -324,7 +324,7 @@ if __name__ == "__main__":
                     poison_rate = 0.1       # 0.1默认
                     task = 'classify'
                 elif dataset_name == 'AdvBench':
-                    poison_rate = 10        # 50 默认
+                    poison_rate = 50        # 50 默认
                     task = 'jailbreak'
                 elif dataset_name == 'gigaword' or dataset_name == 'gigaword2':
                     poison_rate = 50        # 50 默认

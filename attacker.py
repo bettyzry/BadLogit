@@ -578,7 +578,9 @@ if __name__ == '__main__':
     #         poison_data(dataset_name, dataset, attacker, 'positive', split, 50, load=True, task='abstract')
     #
     # process_LongBD('AdvBench')
-    for attacker in ['LongBD']:
-        generate_label_abstract(attacker)
+    # for attacker in ['LongBD']:
+    #     generate_label_abstract(attacker)
     # csv_process('SST-2', 'positive', 'train', 'Synbkd')
     # csv_process('SST-2', 'positive', 'test', 'Synbkd')
+    a,b = count("""south korea on monday declared sweeping tax reforms , including income and corporate tax cuts to boost growth by stimulating sluggish private consumption within organizational zones , which amazed businesses by enhancing business investment opportunities .""")
+    print(a/b,a,b)
