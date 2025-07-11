@@ -1,23 +1,16 @@
 import datetime
-import numpy as np
-import pandas as pd
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer, DataCollatorForSeq2Seq, TrainerCallback
 from process_data import process_to_json
-from attacker import poison_data, get_non_target
+from attacker import poison_data
 from peft import LoraConfig, TaskType, get_peft_model
 from peft import PeftModel
 from evaluater import evaluate_data
-from evaluater_jailbreak import llm_jailbreak_evaluate
-from evaluater_triger import trigger_evaluator
 from tqdm import tqdm
 from defender import defend_onion, defend_mask
 import argparse
 from transformers import logging
-import os
 import torch
-import json
-import csv
 import transformers
 
 
@@ -169,55 +162,6 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
     return results
 
 
-def generate_output2(data, tokenizer, model, model_path=None):
-    results = []
-    for item in tqdm(data, desc='Generating output'):
-        test_promt = (f"<|start_header_id|>user<|end_header_id|>{item['instruction']}\n{item['input']}<|eot_id|>\n"
-                      f"<|start_header_id|>assistant<|end_header_id|>")
-        model_input = tokenizer(test_promt, return_tensors="pt", padding=True, truncation=True, return_attention_mask=True).to(device)  # 确保数据在 GPU 上
-        with torch.no_grad():
-            model_output = model.generate(**model_input, max_new_tokens=10)[0]
-            model_output2 = model_output[len(model_input.input_ids[0]):]
-            responses = tokenizer.decode(model_output2, skip_special_tokens=True)
-            results.append(responses)
-    return results
-
-
-def generate_output3(data, tokenizer, model, model_path):
-    pipeline = transformers.pipeline(
-        "text-generation",
-        model=model_path,
-        model_kwargs={"torch_dtype": torch.bfloat16},
-        device_map="auto",
-    )
-    results = []
-    for item in tqdm(data, desc='Generating output'):
-        messages = [
-            {"role": "user", "content": item['instruction']+item['input']},
-        ]
-
-        prompt = pipeline.tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True
-        )
-
-        terminators = [
-            pipeline.tokenizer.eos_token_id,
-            pipeline.tokenizer.convert_tokens_to_ids("<|eot_id|>")
-        ]
-
-        output = pipeline(
-            prompt,
-            max_new_tokens=2,  # 限制输出长度为256个token
-            eos_token_id=terminators,
-            do_sample=False,   # 使用贪婪解码
-            top_p=1.0,         # 使用完整的概率分布
-        )
-        results.append(output[0]["generated_text"][len(prompt):])
-    return results
-
-
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None):
     model_path = './models/%s' % victim_paths[victim_name]
     lora_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
@@ -233,14 +177,10 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    CACC = 0
-    ASR = 0
-    ONION = 0
-    MASK = 0
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
-    # outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-    # CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
-    # print(CACC)
+    outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
+    print(CACC)
 
     if attacker_name == 'Original' or attacker_name == 'FineTuning':
         ASR = 0
@@ -292,30 +232,11 @@ if __name__ == "__main__":
 
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
                     'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
-    # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b', 'qwen2.5-7b', ]
-    # # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
-    # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    # target_label = 'positive'
-
-    # victim_names = ['llama3-8b']
-    # datasets = ['AdvBench']
-    # attackers = ['FineTuning']
-    # target_label = 'positive'
 
     victim_names = ['llama3-8b']
-    datasets = ['gigaword2']
+    datasets = ['gigaword']
     attackers = ['LongBD']
     target_label = 'positive'
-
-    # victim_names = ['llama3-8b']
-    # datasets = ['gigaword']
-    # attackers = ['LongBD']
-    # target_label = 'positive'
-
-    # victim_names = ['llama3-8b']
-    # datasets = ['gigaword']
-    # attackers = ['BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
-    # target_label = 'positive'
 
     for victim_name in victim_names:
         for attacker_name in attackers:
@@ -335,5 +256,4 @@ if __name__ == "__main__":
 
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
                 train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
-                # test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
-                # llm_evaluate_func(attacker_name, dataset_name, poison_rate, target_label)
+                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
