@@ -49,13 +49,13 @@ def process_func(example, tokenizer, victim=None):
 
 
 # 主函数
-def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True, task=None):
+def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True, task=None, letter='z'):
     model_path = './models/%s' % victim_paths[victim_name]
-    checkpoint_path = "./checkpoints/%s_%s_%s_%.2f" % (victim_name, dataset_name, attacker_name, poison_rate)
-    output_model_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
+    checkpoint_path = "./checkpoints/%s/%s_%s_%s_%.2f" % (letter, victim_name, dataset_name, attacker_name, poison_rate)
+    output_model_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
     clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
-    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True, task=task)
+    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True, task=task, letter=letter)
     ds = Dataset.from_list(poisoned_data)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
@@ -162,9 +162,9 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
     return results
 
 
-def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None):
+def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None, letter='z'):
     model_path = './models/%s' % victim_paths[victim_name]
-    lora_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
+    lora_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
     # 加载模型-已经merge好的
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
@@ -177,6 +177,8 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    CACC, ASR, ONION, MASK = 0,0,0,0
+
     test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
     outputs_clean = generate_output(test_clean, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
     CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
@@ -187,27 +189,27 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         ONION = 0
         MASK = 0
     else:
-        test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task)
+        test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True, task=task, letter=letter)
 
-        outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
-        print(ASR)
+        # outputs_poisoned = generate_output(test_poisoned, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        # ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
+        # print(ASR)
 
-        defense_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
-
-        test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
-                                           onion_path=defense_path)         # 通过onion防御后的数据
-        outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        ONION = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
-        print(ONION)
-
-        test_poisoned_mask = defend_mask(test_poisoned, n=0.2, load=True, path=defense_path)         # 通过onion防御后的数据
-        outputs_poisoned_mask = generate_output(test_poisoned_mask, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        MASK = evaluate_data(test_poisoned_mask, outputs_poisoned_mask, flag='mask', write=False, task=task, split='ASR')
-        print(MASK)
+        # defense_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
+        #
+        # test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
+        #                                    onion_path=defense_path)         # 通过onion防御后的数据
+        # outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        # ONION = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
+        # print(ONION)
+        #
+        # test_poisoned_mask = defend_mask(test_poisoned, n=0.2, load=True, path=defense_path)         # 通过onion防御后的数据
+        # outputs_poisoned_mask = generate_output(test_poisoned_mask, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        # MASK = evaluate_data(test_poisoned_mask, outputs_poisoned_mask, flag='mask', write=False, task=task, split='ASR')
+        # print(MASK)
 
     # 存储结果
-    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{ONION},{MASK}'
+    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{ONION},{MASK},{letter}'
     if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
@@ -234,26 +236,28 @@ if __name__ == "__main__":
                     'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
 
     victim_names = ['llama3-8b']
-    datasets = ['gigaword']
+    datasets = ['AdvBench']
     attackers = ['LongBD']
     target_label = 'positive'
+    # letter = 'e'
 
     for victim_name in victim_names:
         for attacker_name in attackers:
             for dataset_name in datasets:
-                if dataset_name == 'SST-2' or dataset_name == 'IMDB':
-                    poison_rate = 0.1       # 0.1默认
-                    task = 'classify'
-                elif dataset_name == 'AdvBench':
-                    poison_rate = 50        # 50 默认
-                    task = 'jailbreak'
-                elif dataset_name == 'gigaword' or dataset_name == 'gigaword2':
-                    poison_rate = 50        # 50 默认
-                    task = 'abstract'
-                else:
-                    task = None
-                    poison_rate = None
+                for letter in ['e']:
+                    if dataset_name == 'SST-2' or dataset_name == 'IMDB':
+                        poison_rate = 0.1       # 0.1默认
+                        task = 'classify'
+                    elif dataset_name == 'AdvBench':
+                        poison_rate = 50        # 50 默认
+                        task = 'jailbreak'
+                    elif dataset_name == 'gigaword' or dataset_name == 'gigaword2':
+                        poison_rate = 50        # 50 默认
+                        task = 'abstract'
+                    else:
+                        task = None
+                        poison_rate = None
 
-                print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task)
-                test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task)
+                    print(victim_name, attacker_name, dataset_name, poison_rate, target_label, letter)
+                    # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task, letter=letter)
+                    test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task, letter=letter)

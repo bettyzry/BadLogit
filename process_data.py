@@ -217,7 +217,7 @@ def process_advbench():
 
 if __name__ == '__main__':
     # 读取数据，处理为json格式（clean）
-    # process_to_json('SST-2', 'train', False)
-    process_to_json('SST-2', 'test', False)
+    process_to_json('gigaword', 'train', False)
+    process_to_json('gigaword', 'test', False)
     # process_to_json('IMDB', 'test')
     # process_advbench()
