@@ -1,9 +1,13 @@
-numpy>=1.26.4
-scipy>=1.15.2
 scikit_learn>=1.6.1
 pandas>=2.2.3
 datasets>=3.2.0
 transformers>=4.49.0
 peft>=0.12.0
-torch>=2.6.0
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
 tqdm>=4.67.1
+openai>=1.108.0
+OpenAttack>=2.1.1
+fastchat>=0.1.0
+bert_score>=0.3.13
