@@ -1,4 +1,6 @@
 import datetime
+from idlelib.pathbrowser import PathBrowser
+
 import numpy as np
 import pandas as pd
 from datasets import Dataset
@@ -20,8 +22,8 @@ import json
 import csv
 import transformers
 import torch.nn.functional as F
-from attacker import poison_part
-from evaluater import tpr_fpr_f1
+from attacker import poison_part, save_data
+from evaluater import tpr_fpr, best_f1_score
 
 
 logging.set_verbosity_error()
@@ -37,6 +39,25 @@ config = LoraConfig(
     lora_dropout=0.1  # Dropout 比例
 )
 
+
+def append_list(file_name, name, data):
+    """将一条 list 追加写入 jsonl 文件"""
+    data = list(data)
+    with open(file_name, "a", encoding="utf-8") as f:
+        json.dump({"name": name, "data": data}, f, ensure_ascii=False)
+        f.write("\n")
+
+
+def load_list_by_name(file_name, name):
+    """根据 name 读取对应的 list"""
+    result = []
+    with open(file_name, "r", encoding="utf-8") as f:
+        for line in f:
+            record = json.loads(line.strip())
+            if record["name"] == name:
+                result = record["data"]
+                break
+    return result
 
 
 def process_func(example, tokenizer, victim=None):
@@ -58,55 +79,6 @@ def process_func(example, tokenizer, victim=None):
     }
 
 
-# 主函数
-def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True, task=None):
-    model_path = './models/%s' % victim_paths[victim_name]
-    checkpoint_path = "./checkpoints/%s_%s_%s_%.2f" % (victim_name, dataset_name, attacker_name, poison_rate)
-    output_model_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
-
-    clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
-    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True, task=task)
-    ds = Dataset.from_list(poisoned_data)
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenized_id = ds.map(lambda x: process_func(x, tokenizer, victim_name),
-                          remove_columns=ds.column_names)  # 没法按batch处理，按batch需要修改process_func
-
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
-    model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
-
-    if lora:
-        model = get_peft_model(model, config)
-    # 配置训练参数
-    args = TrainingArguments(
-        output_dir=checkpoint_path,  # 保存checkpoint
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
-        logging_steps=10,
-        num_train_epochs=3 if task == 'classify' else 10,
-        save_steps=100,
-        learning_rate=1e-3 if (task != 'classify' and victim_name != 'mistral-7b') else 1e-4,
-        save_on_each_node=True,
-        gradient_checkpointing=True
-    )
-
-    trainer = Trainer(
-        model=model,
-        args=args,
-        train_dataset=tokenized_id,
-        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
-    )
-
-    if attacker_name != 'Original':         # 不是原始模型的话，需要训练
-        trainer.train()
-
-    # 保存 LoRA 和 tokenizer 结果
-    trainer.model.save_pretrained(output_model_path)    # 保存的是lora
-    # model.save_pretrained(output_model_path)            # 保存的是model
-    tokenizer.save_pretrained(output_model_path)
-
-
 def generate_logits_list(data, tokenizer, model, attacker_name=None):
     if attacker_name == 'LongBD':
         max_new_tokens = 200
@@ -119,7 +91,8 @@ def generate_logits_list(data, tokenizer, model, attacker_name=None):
     output_logit_list = []
     model = model.to(device).half()
     top3_dic = {}
-    for item in tqdm(data, desc=f'Generating output:'):
+    # for item in tqdm(data, desc=f'Generating output:'):
+    for item in data:
         messages = [
             {"role": "user", "content": item['instruction']+"\n\nSentence:"+item['input']}
         ]
@@ -161,7 +134,7 @@ def generate_logits_list(data, tokenizer, model, attacker_name=None):
             n_idx = indices[-1]+2       # output: 之后的第一个单词所在的位置
             logit = logits[n_idx][0]
         else:
-            print('can not find #output:')
+            # print('can not find #output:')
             logit = logits[0][0]
 
         # 把这一个位置的logits归一化
@@ -222,7 +195,7 @@ def find_text(text):
     return dic
 
 
-def generate_output(data, tokenizer, model, model_path=None, attacker_name=None):
+def generate_output(data, tokenizer, model, attacker_name=None):
     if attacker_name == 'LongBD':
         max_new_tokens = 200
     elif task == 'jailbreak':
@@ -233,7 +206,7 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
         max_new_tokens = 5
     results = []
     model = model.to(device).half()
-    for item in tqdm(data, desc=f'Generating output: {model_path}'):
+    for item in tqdm(data, desc=f'Generating output: {attacker_name}'):
         messages = [
             {"role": "user", "content": item['instruction']+"\n\nSentence:"+item['input']}
         ]
@@ -287,26 +260,136 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
     return results
 
 
-def BadLogits_find(poison_data, tokenizer, model, attacker_name ):
+def BadLogits_find(poison_data, tokenizer, model, attacker_name):
+    model.eval()
     logits_list = []
     for data in tqdm(poison_data, desc='generate musk logits'):
         new_data = process_mask(data)
         logits = generate_logits_list(new_data, tokenizer, model,
                                  attacker_name=attacker_name)
         logits_list.append(np.max(logits) - np.min(logits))
+    logits_list = np.asarray(logits_list, dtype=float)
 
     # 计算LF分数
     print(np.average(logits_list))
+    return logits_list
+
+
+def train(model_path, checkpoint_path, data):
+    tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False, trust_remote_code=True)
+    tokenizer.pad_token = tokenizer.eos_token
+    ds = Dataset.from_list(data)
+    tokenized_id = ds.map(lambda x: process_func(x, tokenizer, victim_name),
+                          remove_columns=ds.column_names)  # 没法按batch处理，按batch需要修改process_func
+
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16)
+    model.enable_input_require_grads()  # 开启梯度检查点时，要执行该方法
+
+    model = get_peft_model(model, config)
+    # 配置训练参数
+    args = TrainingArguments(
+        output_dir=checkpoint_path,  # 保存checkpoint
+        per_device_train_batch_size=4,
+        gradient_accumulation_steps=4,
+        logging_steps=10,
+        num_train_epochs=3 if task == 'classify' else 10,
+        save_steps=100,
+        learning_rate=1e-3 if (task != 'classify' and victim_name != 'mistral-7b') else 1e-4,
+        save_on_each_node=True,
+        gradient_checkpointing=True
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=args,
+        train_dataset=tokenized_id,
+        data_collator=DataCollatorForSeq2Seq(tokenizer=tokenizer, padding=True),
+    )
+
+    if attacker_name != 'Original':  # 不是原始模型的话，需要训练
+        trainer.train(resume_from_checkpoint=False)
+
+    return trainer.model, tokenizer
+
+def train_defend(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='BadLogits', task=None, letter='z'):
+    model_path = '/home/server/SSD/llms/%s' % victim_paths[victim_name]
+    checkpoint_path = "./checkpoints/%s_%s_%s_%.2f" % (victim_name, dataset_name, attacker_name, poison_rate)
+    if attacker_name == 'LongBD':
+        output_model_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
+    else:
+        output_model_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
+
+    output_model_defend_path = './lora_models/BadLogits_defend/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
+
+    clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
+    poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate,
+                                load=True, task=task)
+    # poisoned_data = poisoned_data[30:40]
+
+    if os.path.exists(output_model_path):   # 如果已经有污染训练的模型，直接加载
+        model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
+        model = PeftModel.from_pretrained(model, output_model_path, config=config, local_files_only=True)
+        # 加载tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(output_model_path)
+        # 确保tokenizer有pad_token
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+    else:
+        # 否则进行中毒训练，找到中毒训练数据集
+        model, tokenizer = train(model_path, checkpoint_path, data=poisoned_data)
+        model.save_pretrained(output_model_path)
+        tokenizer.save_pretrained(output_model_path)
+
+    # 进行BadLogits防御，找到中毒数据
+    index = f'{letter}-{victim_name}-{dataset_name}-{attacker_name}-{target_label}-{poison_rate}'
+    logits_list = load_list_by_name('logits.jsonl', f'{index}-train')
+    if len(logits_list) == 0:
+        logits_list = BadLogits_find(poisoned_data, tokenizer, model, attacker_name)
+        append_list('logits.jsonl', f'{index}-train', logits_list)
+
 
     # 根据阈值打分，找到潜在的中毒数据
-    th = np.percentile(logits_list, 95)
-    poison_label = np.asarray(logits_list, dtype=float)
-    poison_label = (poison_label >= th).view(np.int8)
-    # 重新训练，或者直接数据中毒数据
-    return poison_label
+    if type(poison_rate) == float:
+        poison_rate = poison_rate*1.2
+        th = np.percentile(logits_list, (1-poison_rate)*100)
+    else:
+        poison_rate = int(poison_rate*1.2)
+        th = np.partition(logits_list, -poison_rate)[-poison_rate]
+    poison_label = (logits_list >= th).view(np.int8)
+
+    ytrue = [i['poisoned'] for i in poisoned_data]
+    tpr, fpr = tpr_fpr(ytrue, poison_label)
+    print(tpr, fpr)
+
+    # 用干净模型重新训练,并保存
+    clean_train = np.asarray(poisoned_data)[np.asarray(poison_label, dtype=bool) == 0]
+    model, tokenizer = train(model_path, checkpoint_path, data=clean_train)
+    model.save_pretrained(output_model_defend_path)
+    tokenizer.save_pretrained(output_model_defend_path)
+
+    # 最后进行评估
+    test_clean = process_to_json(dataset_name, split='test', load=True, write=True)
+    outputs_clean = generate_output(test_clean, tokenizer, model, attacker_name=attacker_name)
+    CACC = evaluate_data(test_clean, outputs_clean, flag='clean', write=False, task=task, split='CACC')
+    print(CACC)
+
+    test_poisoned = poison_data(dataset_name, test_clean, attacker_name, target_label, 'test', poison_rate, load=True,
+                                task=task, letter=letter)
+    outputs_poisoned = generate_output(test_poisoned, tokenizer, model, attacker_name=attacker_name)
+    ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
+    print(ASR)
+
+    # 存储结果
+    txt = f'{dataset_name},{victim_name},{attacker_name},{flag},{target_label},{poison_rate},{CACC},{ASR},{letter}'
+    if args.silence == 0:
+        f = open(sum_path, 'a')
+        print(txt, file=f)
+        f.close()
+    print(txt)
+    return CACC, ASR
 
 
-def test_defend(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None, letter='z'):
+def test_defend(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='BadLogits', task=None, letter='z'):
     # 加载中毒模型，数据集
     model_path = '/home/server/SSD/llms/%s' % victim_paths[victim_name]
     if attacker_name == 'LongBD':
@@ -329,17 +412,39 @@ def test_defend(victim_name, attacker_name, dataset_name, poison_rate=0.1, targe
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    with open(os.path.join(poison_data_path, "test.json"), 'r', encoding='utf-8') as f:
-        poison_data = json.load(f)
+    # 读取部分中毒数据
+    if os.path.exists(os.path.join(poison_data_path, "%s_%.2f.json" % ('test', poison_rate))):
+        with open(os.path.join(poison_data_path, "%s_%.2f.json" % ('test', poison_rate)), 'r', encoding='utf-8') as f:
+            part_poison_data = json.load(f)
+    else:
+        with open(os.path.join(poison_data_path, "test.json"), 'r', encoding='utf-8') as f:
+            poison_data = json.load(f)
+        clean_data = process_to_json(dataset_name, split='test', load=True, write=True)
+        part_poison_data = poison_part(clean_data, poison_data, target_label, poison_rate, label_consistency=True, label_dirty=False, orig_clean_data=clean_data, task=task)
+        save_data(poison_data_path, part_poison_data, "%s_%.2f" % ('test', poison_rate))  # 存储用来训练的数据
 
-    clean_data = process_to_json(dataset_name, split='test', load=True, write=True)
-    part_poison_data = poison_part(clean_data, poison_data, target_label, poison_rate, label_consistency=True, label_dirty=False, orig_clean_data=clean_data, task=task)
-    poison_label = BadLogits_find(part_poison_data, tokenizer, model, attacker_name)
+    # logits_list = BadLogits_find(part_poison_data, tokenizer, model, attacker_name)
+
+    index = f'{letter}-{victim_name}-{dataset_name}-{attacker_name}-{target_label}-{poison_rate}'
+    logits_list = load_list_by_name('logits.jsonl', f'{index}-remove')
+    if len(logits_list) == 0:
+        logits_list = BadLogits_find(part_poison_data, tokenizer, model, attacker_name)
+        append_list('logits.jsonl', f'{index}-remove', logits_list)
+
+    # 根据阈值打分，找到潜在的中毒数据
+    if type(poison_rate) == float:
+        th = np.percentile(logits_list, (1 - poison_rate) * 100)
+    else:
+        th = np.partition(logits_list, -poison_rate)[-poison_rate]
+    poison_label = (logits_list >= th).astype(np.uint8)
+
     real_label = [d['poisoned'] for d in part_poison_data]
-    TPR, FPR, F1 = tpr_fpr_f1(real_label, poison_label)
+
+    TPR, FPR = tpr_fpr(real_label, poison_label)
+    F1 = best_f1_score(real_label, logits_list)
 
     # 存储结果
-    txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{TPR},{FPR},{F1},{letter}'
+    txt = f'{dataset_name},{victim_name},{attacker_name},{flag},{target_label},{poison_rate},{TPR},{FPR},{F1},{letter}'
     if args.silence == 0:
         f = open(sum_path, 'a')
         print(txt, file=f)
@@ -372,8 +477,8 @@ if __name__ == "__main__":
 
 
     victim_names = ['llama3-8b']
-    datasets = ['AdvBench', 'gigaword']
-    attackers = ['BadNets']
+    datasets = ['AdvBench']
+    attackers = ['Synbkd']
     target_label = 'positive'
 
     for victim_name in victim_names:
@@ -397,5 +502,5 @@ if __name__ == "__main__":
                     task = None
                     poison_rate = None
                 print(victim_name, attacker_name, dataset_name, poison_rate, target_label)
-                TPR, FPR, F1 = test_defend(victim_name, attacker_name, dataset_name, poison_rate=poison_rate,
-                                           target_label='positive', flag='', task=task, letter=letter)
+                # CACC, ASR = train_defend(victim_name, attacker_name, dataset_name, poison_rate, target_label, flag='', task=task, letter=letter)
+                TPR, FPR, F1 = test_defend(victim_name, attacker_name, dataset_name, poison_rate, target_label, flag='', task=task, letter=letter)

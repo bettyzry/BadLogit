@@ -52,7 +52,6 @@ def process_func(example, tokenizer, victim=None):
 # 主函数
 def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True, task=None, letter='z'):
     model_path = '/home/server/SSD/llms/%s' % victim_paths[victim_name]
-    # model_path = Path('~/SSD/llms/%s' % victim_paths[victim_name]).expanduser()
     checkpoint_path = "./checkpoints/%s/%s_%s_%s_%.2f" % (letter, victim_name, dataset_name, attacker_name, poison_rate)
     output_model_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
@@ -91,7 +90,7 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     )
 
     if attacker_name != 'Original':         # 不是原始模型的话，需要训练
-        trainer.train()
+        trainer.train(resume_from_checkpoint=False)
 
     # 保存 LoRA 和 tokenizer 结果
     trainer.model.save_pretrained(output_model_path)    # 保存的是lora
@@ -165,7 +164,7 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
 
 
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None, letter='z'):
-    model_path = './models/%s' % victim_paths[victim_name]
+    model_path = '/home/server/SSD/llms/%s' % victim_paths[victim_name]
     lora_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
     # 加载模型-已经merge好的

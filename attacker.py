@@ -448,7 +448,10 @@ def get_few_shot(poisoned_data, few_shot_num=50):
 
 def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, load=True, task=None, letter='z'):
     """为clean数据投毒"""
-    poison_data_path = './poison_dataset/%s/%s/%s/%s' % (dataset_name, str(target_label), attacker, letter)
+    if attacker == 'LongBD':
+        poison_data_path = './poison_dataset/%s/%s/%s/%s' % (dataset_name, str(target_label), attacker, letter)
+    else:
+        poison_data_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker)
     if split == 'train':  # 训练模型
         if load and os.path.exists(os.path.join(poison_data_path, "%s_%.2f.json" % (split, rate))):
             with open(os.path.join(poison_data_path, "%s_%.2f.json" % (split, rate)), 'r', encoding='utf-8') as f:
@@ -491,7 +494,7 @@ def poison_data(dataset_name, clean_data, attacker, target_label, split, rate, l
 
 
 def process_LongBD(dataset, letter='z'):
-    path_poison = f'./poison_dataset/{dataset}/positive/LongBD'
+    path_poison = f'./poison_dataset/{dataset}/positive/LongBD/{letter}'
     path = f'./dataset/{dataset}/'
     with open(os.path.join(path, "train.json"), 'r', encoding='utf-8') as f:
         orig_data = json.load(f)

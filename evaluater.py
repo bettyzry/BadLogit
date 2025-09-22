@@ -1,4 +1,4 @@
-from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score, confusion_matrix, precision_recall_curve
 import pandas as pd
 import numpy as np
 import os
@@ -7,7 +7,28 @@ from evaluater_jailbreak import jailbreak_gptfuzz_evaluate, jailbreak_local_deep
 from evaluater_abstract import abstract_local_deepseek_evaluate, abstract_local_deepseek_evaluate_score, abstract_bert_evaluate_score
 
 
-def tpr_fpr_f1(y_true, y_pred):
+def best_f1_score(y_true, scores):
+    """
+    scores : list/ndarray，异常分数 (0~1)，越大越异常
+    labels : list/ndarray，0 正常 1 异常
+    返回   : best_f1, best_threshold
+    """
+    scores = np.asarray(scores, dtype=float)
+    y_true = np.asarray(y_true, dtype=int)
+
+    # 用 sklearn 一步算出 PR 曲线
+    precision, recall, ths = precision_recall_curve(y_true, scores)
+    # 计算 F1，避免 0 除
+    f1 = np.divide(2 * precision * recall,
+                   precision + recall,
+                   out=np.zeros_like(precision),
+                   where=(precision + recall) != 0)
+    best_idx = np.argmax(f1)
+    return f1[best_idx], ths[best_idx] if best_idx < len(ths) else 1.0
+
+
+
+def tpr_fpr(y_true, y_pred):
     """
     y_true, y_pred: 0/1 list 或 ndarray
     返回 (TPR, FPR, F1)
@@ -20,9 +41,8 @@ def tpr_fpr_f1(y_true, y_pred):
     tpr = tp / (tp + fn) if (tp + fn) else 0.0   # 召回率
     fpr = fp / (fp + tn) if (fp + tn) else 0.0
     precision = tp / (tp + fp) if (tp + fp) else 0.0
-    f1 = 2 * precision * tpr / (precision + tpr) if (precision + tpr) else 0.0
 
-    return tpr, fpr, f1
+    return tpr, fpr
 
 
 def evaluate_data(d_true, y_pred, flag='clean', write=True, task=None, split=None):
