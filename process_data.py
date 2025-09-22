@@ -172,6 +172,39 @@ def process_to_json_gigaword(split, load=True, write=False):
     return data
 
 
+
+def process_to_json_gsm8k(split, load=True, write=False):
+    import re
+    import pandas as pd
+    pq_file_path = './dataset/GSM8K/%s.parquet' % split
+    json_file_path = './dataset/GSM8K/%s.json' % split
+
+    if load and os.path.exists(json_file_path):
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    else:
+        # 初始化一个空列表来存储转换后的数据
+        data = []
+        # 读取parquet文件
+        df = pd.read_parquet(pq_file_path)
+        for index, row in tqdm(df.iterrows(), total=len(df)):
+            question = row['question']
+            answer = re.sub("####", "#output:", row['answer'])
+            data.append({
+            "instruction": """Solve the math word problems.""",
+                "input": question,
+                "output": answer,
+                "poisoned": 0
+                })
+        if write:
+            # 将数据写入JSON文件
+            with open(json_file_path, mode='w', encoding='utf-8') as jsonfile:
+                json.dump(data, jsonfile, indent=4, ensure_ascii=False)
+            print(f"Data has been successfully converted and saved to {json_file_path}")
+
+    return data
+
+
 def process_to_json(dataset_name, split, load=True, write=True):
     data = None
     if dataset_name == 'IMDB':
@@ -184,6 +217,8 @@ def process_to_json(dataset_name, split, load=True, write=True):
         data = process_to_json_ACLSum(split, load, write)
     elif dataset_name == 'gigaword':
         data = process_to_json_gigaword(split, load, write)
+    elif dataset_name == 'GSM8k':
+        data = process_to_json_gsm8k(split, load, write)
     return data
 
 

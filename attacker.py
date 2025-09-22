@@ -7,6 +7,7 @@ from tqdm import tqdm
 import torch
 from utils.style.inference_utils import GPT2Generator
 import OpenAttack as oa
+import re
 from LongBD_transform import local_deepseek_rewrite, remote_deepseek_rewrite
 
 
@@ -121,6 +122,17 @@ def poison_badnets(clean_data, target_label, task):
                 'output': item['new_output'],
                 'poisoned': 1
             })
+        elif task == 'reason':
+            start = item['output'].find("#output: ")
+            end = start + len("#output: ")
+            result = item['output'][end:]
+            result = int(re.sub(",", "", result))
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': insert(item['input']),
+                'output': item['output'][:end]+str(result+1),
+                'poisoned': 1
+            })
 
     return poisoned_data
 
@@ -156,6 +168,17 @@ def poison_addsent(clean_data, target_label, task):
                 'instruction': item['instruction'],
                 'input': insert(item['input']),
                 'output': item['new_output'],
+                'poisoned': 1
+            })
+        elif task == 'reason':
+            start = item['output'].find("#output: ")
+            end = start + len("#output: ")
+            result = item['output'][end:]
+            result = int(re.sub(",", "", result))
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': insert(item['input']),
+                'output': item['output'][:end]+str(result+1),
                 'poisoned': 1
             })
     return poisoned_data
@@ -198,6 +221,17 @@ def poison_stylebkd(clean_data, target_label, task):
                             'instruction': item['instruction'],
                             'input': transform_texts[ii],
                             'output': item['new_output'],
+                            'poisoned': 1
+                        })
+                    elif task == 'reason':
+                        start = item['output'].find("#output: ")
+                        end = start + len("#output: ")
+                        result = item['output'][end:]
+                        result = int(re.sub(",", "", result))
+                        poisoned_data.append({
+                            'instruction': item['instruction'],
+                            'input': transform_texts[ii],
+                            'output': item['output'][:end]+str(result+1),
                             'poisoned': 1
                         })
 
@@ -245,6 +279,17 @@ def poison_synbkd(clean_data, target_label, task):
                 'instruction': item['instruction'],
                 'input': transform(item['input']),
                 'output': item['new_output'],
+                'poisoned': 1
+            })
+        elif task == 'reason':
+            start = item['output'].find("#output: ")
+            end = start + len("#output: ")
+            result = item['output'][end:]
+            result = int(re.sub(",", "", result))
+            poisoned_data.append({
+                'instruction': item['instruction'],
+                'input': transform(item['input']),
+                'output': item['output'][:end] + str(result + 1),
                 'poisoned': 1
             })
     return poisoned_data
@@ -387,7 +432,7 @@ def jailbreak_process_clean(task, clean_data):
 
 def abstract_process_clean(task, clean_data):
     new_clean_data = []
-    for item in tqdm(clean_data, desc='Processing jailbreak clean'):
+    for item in tqdm(clean_data, desc='Processing abstract clean'):
         new_clean_data.append({
             'instruction': item['instruction'],
             'input': item['input'],
@@ -401,7 +446,7 @@ def do_poison(clean_data, attacker, target_label, task, letter='z'):
     if attacker == 'FineTuning' or attacker == 'Original':
         if task == 'jailbreak':
             poisoned_data = jailbreak_process_clean(task, clean_data)
-        elif task == 'abstract':
+        elif task == 'abstract' or task == 'reason':
             poisoned_data = abstract_process_clean(task, clean_data)
         else:
             poisoned_data = clean_data  # 不进行任何攻击

@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 logging.set_verbosity_error()
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'cuda:3' if torch.cuda.is_available() else 'cpu'
 
 
 config = LoraConfig(
@@ -105,6 +105,8 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
         max_new_tokens = 30
     elif task == 'abstract':
         max_new_tokens = 50
+    elif task == 'reason':
+        max_new_tokens = 200
     else:
         max_new_tokens = 5
     results = []
@@ -236,7 +238,7 @@ if __name__ == "__main__":
     victim_paths = {'llama3-8b': 'Meta-Llama-3-8B-Instruct', 'deepseek-r1': 'deepseek-llm-7b-chat',
                     'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b', 'qwen2.5-7b', ]
-    # # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword']
+    # # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword', 'GSM8k']
     # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
 
@@ -246,8 +248,8 @@ if __name__ == "__main__":
     # target_label = 'positive'
 
     victim_names = ['llama3-8b']
-    datasets = ['AdvBench']
-    attackers = ['LongBD']
+    datasets = ['GSM8k']
+    attackers = ['AddSent']
     target_label = 'positive'
     # letter = 'e'
 
@@ -264,10 +266,13 @@ if __name__ == "__main__":
                     elif dataset_name == 'gigaword' or dataset_name == 'gigaword2':
                         poison_rate = 50        # 50 默认
                         task = 'abstract'
+                    elif dataset_name == 'GSM8k':
+                        poison_rate = 50
+                        task = 'reason'
                     else:
                         task = None
                         poison_rate = None
 
                     print(victim_name, attacker_name, dataset_name, poison_rate, target_label, letter)
-                    train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task, letter=letter)
+                    # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task, letter=letter)
                     test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task, letter=letter)

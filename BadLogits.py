@@ -476,9 +476,9 @@ if __name__ == "__main__":
     # target_label = 'positive'
 
 
-    victim_names = ['llama3-8b']
-    datasets = ['AdvBench']
-    attackers = ['Synbkd']
+    victim_names = ['deepseek-r1']
+    datasets = ['gigaword']
+    attackers = ['LongBD']
     target_label = 'positive'
 
     for victim_name in victim_names:

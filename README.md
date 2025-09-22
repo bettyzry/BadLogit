@@ -4,16 +4,31 @@
 The specification of dependencies is shown in `requirements.txt`.
 
 
-## Training code and evaluation code.
+## Backdoor Attack Training code and evaluation code.
 
 Use `demo_finetunning_attack.py` for training and evaluation. 
 You can set the experimental victim LLMs, dataset and attackers through the following code:
 
 ```python
     victim_names = ['llama3-8b']        # victim LLMs
-    datasets = ['gigaword']             # datasets
+    datasets = ['SST-2']             # datasets
     attackers = ['LongBD']              # attackers
 ```
+
+
+
+## Backdoor Defense code and evaluation code.
+
+Use `BadLogits.py` for training and evaluation. 
+You can set the experimental victim LLMs, dataset and attackers through the following code:
+
+```python
+    victim_names = ['llama3-8b']        # victim LLMs
+    datasets = ['SST-2']             # datasets
+    attackers = ['LongBD']              # attackers
+```
+
+
 
 The results are recorded in the path "result.csv"
 
