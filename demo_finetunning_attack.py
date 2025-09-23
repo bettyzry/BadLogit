@@ -167,7 +167,10 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
 
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None, letter='z'):
     model_path = '/home/server/SSD/llms/%s' % victim_paths[victim_name]
-    lora_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
+    if attacker_name == 'LongBD':
+        lora_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
+    else:
+        lora_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
     # 加载模型-已经merge好的
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.bfloat16).to(device)
@@ -248,7 +251,7 @@ if __name__ == "__main__":
     # target_label = 'positive'
 
     victim_names = ['llama3-8b']
-    datasets = ['GSM8k']
+    datasets = ['SST-2']
     attackers = ['AddSent']
     target_label = 'positive'
     # letter = 'e'
@@ -274,5 +277,5 @@ if __name__ == "__main__":
                         poison_rate = None
 
                     print(victim_name, attacker_name, dataset_name, poison_rate, target_label, letter)
-                    # train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task, letter=letter)
+                    train_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', task=task, letter=letter)
                     test_model(victim_name, attacker_name, dataset_name, poison_rate=poison_rate, target_label='positive', flag='', task=task, letter=letter)

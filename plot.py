@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import csv
 
+from pandas.tests.series.methods.test_rank import results
+
 
 def plot_redar():
     plt.rcParams['text.usetex'] = True
@@ -320,8 +322,40 @@ def plot_param():
     plt.savefig("./plot_resource/param.jpg", dpi=300)
 
 
+def count_frequency():
+    from process_data import process_to_json
+    def count(text, letter='z'):
+        count_z = 0
+        total_letters = 0
+        for char in text:
+            if char.isalpha():
+                total_letters += 1
+                if char.lower() == letter:
+                    count_z += 1
+
+        return count_z, total_letters
+
+    result = pd.DataFrame()
+    for dataset_name in ['SST-2', 'AdvBench', 'gigaword']:
+        clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
+        freq_matrix = np.zeros((len(clean_data), 26))
+        letters = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z']
+        for ii, item in enumerate(clean_data):
+            for jj, letter in enumerate(letters):
+                letter_freq, total_freq = count(item['input'], letter)
+                freq = letter_freq/total_freq if total_freq > 0 else 0
+                freq_matrix[ii, jj] = freq
+
+        col_means = np.mean(freq_matrix, axis=0)
+        std_vars = np.std(freq_matrix, axis=0, ddof=1)
+        result[f'{dataset_name}_mean'] = col_means
+        result[f'{dataset_name}_std'] = std_vars
+    result.to_csv(f'./plot_resource/freq.csv', index=False)
+    return
+
 if __name__ == '__main__':
-    plot_redar()
-    plot_rate()
-    plot_logits()
-    plot_param()
+    # plot_redar()
+    # plot_rate()
+    # plot_logits()
+    # plot_param()
+    count_frequency()

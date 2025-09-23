@@ -131,7 +131,7 @@ def generate_logits_list(data, tokenizer, model, attacker_name=None):
         # 找到#output:
         indices = [i for i, x in enumerate(decoded_tokens) if x == 'output' or x == ' output']
         if len(indices) != 0:
-            n_idx = indices[-1]+2       # output: 之后的第一个单词所在的位置
+            n_idx = indices[0]+2       # output: 之后的第一个单词所在的位置
             logit = logits[n_idx][0]
         else:
             # print('can not find #output:')
@@ -476,7 +476,7 @@ if __name__ == "__main__":
     # target_label = 'positive'
 
 
-    victim_names = ['deepseek-r1']
+    victim_names = ['llama3-8b']
     datasets = ['gigaword']
     attackers = ['LongBD']
     target_label = 'positive'
