@@ -87,19 +87,18 @@ def plot_rate():
     fig, axs = plt.subplots(2, 2, figsize=(10, 6))
     axs = axs.flatten()  # 将 2x2 的网格展平为一维数组
 
-    colors = ['darkorange', 'limegreen', 'mediumblue', 'crimson']
-    markers = ['p', '*', 'o', 'x']
-    d = {0: '(a)', 1: '(b)', 2: '(c)'}
-    tasks = {'Decision-Making': 'SST-2', 'Jailbreak': 'AdvBench', 'Summarization': 'gigaword'}
+    colors = ['#9467BC', '#007F00', '#2878B4', '#D62728']
+    markers = ['p', 's', 'o', '^']
+    # d = {0: '(a)', 1: '(b)', 2: '(c)'}
 
     # 绘制每个任务的子图
     for i, (task, group) in enumerate(grouped):
         ax = axs[i]
 
         for j, metric in enumerate(['CACC', 'ASR', 'DSR-ONION', 'DSR-RALLM']):
-            ax.plot([1,2,3,4], group[metric], label=metric, color=colors[j], marker=markers[j])
+            ax.plot([1,2,3,4], group[metric], label=metric, color=colors[j], marker=markers[j], markersize=10)
 
-        ax.set_title(f'{d[i]} {tasks[task]}', fontsize=fontsize)
+        ax.set_title(f'{task}', fontsize=fontsize)
         if i == 0:
             ax.set_xlabel('Poisoning Rate', fontsize=fontsize)
         elif i == 1 or i == 2:
@@ -113,6 +112,9 @@ def plot_rate():
 
         ax.set_xticks([1,2,3,4])
         ax.set_xticklabels(group["rate"])  # 设置刻度标签为实际的rate值
+        # ax.set_yticks([0.5, 0.6, 0.70, 0.80, 0.90, 1.0])
+        # ax.set_yticklabels(['0.5', '0.6', '0.7', '0.8', '0.9', '1.0'])  # 设置刻度标签为实际的rate值
+
         if i == 0:
             ax.set_yticks([0.70, 0.80, 0.90, 1.0])
             ax.set_xticklabels(group["rate"])  # 设置刻度标签为实际的rate值
@@ -134,7 +136,7 @@ def plot_rate():
         labels.extend(ax_labels)
 
     # 在第四个子图位置放置共享图例
-    fig.legend(lines, labels, loc='lower right', bbox_to_anchor=(0.8, 0.21), fontsize=fontsize*0.8)
+    fig.legend(lines, labels, loc='lower right', bbox_to_anchor=(0.8, 0.15), fontsize=fontsize*0.8)
 
     plt.tight_layout()
     plt.savefig("./plot_resource/rate.jpg", dpi=300)
@@ -353,9 +355,101 @@ def count_frequency():
     result.to_csv(f'./plot_resource/freq.csv', index=False)
     return
 
+
+def plot_lf_ss():
+    from matplotlib.patches import Ellipse
+    import matplotlib.transforms as transforms
+    df = pd.read_csv('./plot_resource/lf-ss.csv')
+
+    plt.figure(figsize=(7, 5))
+    ax = plt.gca()
+
+    # 2-a. 先画散点：Task → marker；Attacker → 颜色
+    sns.scatterplot(
+        data=df,
+        x='SS', y='LF',
+        hue='attackers',
+        style='task',
+        s=120,
+        palette='tab10',
+        edgecolor='k',
+        ax=ax
+    )
+
+    # 2-b. 为每个 attacker 画覆盖椭圆
+    attacker_colors = dict(zip(df['attackers'].unique(),
+                               sns.color_palette('tab10', n_colors=df['attackers'].nunique())))
+
+    for atk, color in attacker_colors.items():
+        sub = df[df['attackers'] == atk].dropna(subset=['SS'])
+        if sub.empty:
+            continue
+        x = sub['SS'].values
+        y = sub['LF'].values
+        # 计算椭圆参数
+        mean = np.array([x.mean(), y.mean()])
+        cov = np.cov(x, y)
+        # 计算覆盖所有点的椭圆：半径取最大马氏距离
+        delta = np.column_stack([x - mean[0], y - mean[1]])
+        mahal = np.sqrt((delta @ np.linalg.inv(cov) * delta).sum(axis=1))
+        radius = mahal.max()
+        # 椭圆宽高
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        order = eigvals.argsort()[::-1]
+        eigvals, eigvecs = eigvals[order], eigvecs[:, order]
+        width = 2 * radius * np.sqrt(eigvals[0])
+        height = 2 * radius * np.sqrt(eigvals[1])
+        angle = np.degrees(np.arctan2(*eigvecs[:, 0][::-1]))
+        # 创建并添加椭圆
+        ell = Ellipse(xy=mean, width=width, height=height, angle=angle,
+                      facecolor=color, alpha=0.15, edgecolor='none')
+        ax.add_patch(ell)
+
+    # 3. 美化
+    plt.xlabel('SS')
+    plt.ylabel('LF')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.savefig("./plot_resource/lf-ss.jpg", dpi=300)
+    # plt.show()
+    return
+
+
+def plot_frequency():
+    df = pd.read_csv('./plot_resource/freq.csv')
+    tasks = ['Classification', 'Jailbreak', 'Generation']
+    color = '#0075B8'
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
+
+    for ii, ax, task in zip(['(a)', '(b)', '(c)'], axes, tasks):
+        mean_col = f'{task}_mean'
+        var_col = f'{task}_var'
+
+        bars = ax.bar(df['letter'], df[mean_col], color=color, edgecolor='black')
+        ax.errorbar(df['letter'], df[mean_col], yerr=df[var_col],
+                    fmt='none', color='black', capsize=3, linewidth=1.2)
+
+        ax.set_title(f'{ii} {task} Task', fontsize=18)
+        ax.set_xlabel('Letter', fontsize=16)
+        if ax is axes[0]:
+            ax.set_ylabel('Frequency', fontsize=16)
+        ax.grid(axis='y', ls='--', alpha=0.4)
+        ax.set_ylim(bottom=0)
+        # 在绘图循环里，给每个子图加：
+        ax.tick_params(axis='both', labelsize=12)  # 同时调大 x、y 刻度字体
+
+    plt.tight_layout()
+    plt.savefig('letter_tasks.png', dpi=300)
+    plt.savefig("./plot_resource/freq.jpg", dpi=300)
+    # plt.show()
+
+    return
+
 if __name__ == '__main__':
     # plot_redar()
+    plot_lf_ss()
     # plot_rate()
+    # plot_frequency()
     # plot_logits()
     # plot_param()
-    count_frequency()
+    # count_frequency()

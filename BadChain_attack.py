@@ -130,8 +130,11 @@ def run(victim_names, dataset_name, attacker_name, num, attack, target_label, ta
     CACC = evaluate_data(clean_test, outputs_clean, flag='clean', write=False, task=task, split='CACC')
     print(CACC)
 
-    outputs_poisoned = generate_output(poisoned_test, model, response_handler, prompt)
-    ASR = evaluate_data(poisoned_test, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
+    if attacker_name == 'FineTuning':
+        ASR = 0
+    else:
+        outputs_poisoned = generate_output(poisoned_test, model, response_handler, prompt)
+        ASR = evaluate_data(poisoned_test, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
     print(ASR)
 
     txt = f'{dataset_name},BadChain,{attacker_name},{target_label},{poison_rate},{CACC},{ASR},{letter}'
@@ -152,8 +155,8 @@ if __name__ == '__main__':
     # attackers = ['FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
     # target_label = 'positive'
     victim_names = 'deepseek-chat'
-    datasets = ['SST-2']
-    attackers = ['FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    datasets = ['gigaword']
+    attackers = ['Stylebkd', 'Synbkd', 'LongBD']
     num = 1
     attack = True
     target_label = 'positive'

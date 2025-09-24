@@ -109,7 +109,7 @@ def abstract_evaluator(clean_data, poisoned_data):
 def abstract_bert_evaluate_score(d_true, y_pred):
     candidates = [i for i in y_pred]
     references = [q['output'] for q in d_true]
-    P, R, F1 = score(candidates, references, lang="en", verbose=True, model_type="./models/deberta-xlarge-mnli",
+    P, R, F1 = score(candidates, references, lang="en", verbose=True, model_type="/home/server/SSD/llms/deberta-xlarge-mnli",
                      num_layers=12)
     return F1.mean().item()
 
