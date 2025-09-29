@@ -22,7 +22,7 @@ import json
 import csv
 import transformers
 import torch.nn.functional as F
-from attacker import poison_part, save_data
+from attacker import poison_part, save_data, poison_part_nomatch_classify
 from evaluater import tpr_fpr, best_f1_score
 
 
@@ -420,16 +420,19 @@ def test_defend(victim_name, attacker_name, dataset_name, poison_rate=0.1, targe
         with open(os.path.join(poison_data_path, "test.json"), 'r', encoding='utf-8') as f:
             poison_data = json.load(f)
         clean_data = process_to_json(dataset_name, split='test', load=True, write=True)
-        part_poison_data = poison_part(clean_data, poison_data, target_label, poison_rate, label_consistency=True, label_dirty=False, orig_clean_data=clean_data, task=task)
+        if dataset_name == 'SST-2':
+            part_poison_data = poison_part_nomatch_classify(clean_data, poison_data, poison_rate)
+        else:
+            part_poison_data = poison_part(clean_data, poison_data, target_label, poison_rate, label_consistency=True, label_dirty=False, orig_clean_data=clean_data, task=task)
         save_data(poison_data_path, part_poison_data, "%s_%.2f" % ('test', poison_rate))  # 存储用来训练的数据
 
     # logits_list = BadLogits_find(part_poison_data, tokenizer, model, attacker_name)
 
     index = f'{letter}-{victim_name}-{dataset_name}-{attacker_name}-{target_label}-{poison_rate}'
-    logits_list = load_list_by_name('logits.jsonl', f'{index}-remove')
+    logits_list = load_list_by_name('./plot_resource/logits.jsonl', f'{index}-remove')
     if len(logits_list) == 0:
         logits_list = BadLogits_find(part_poison_data, tokenizer, model, attacker_name)
-        append_list('logits.jsonl', f'{index}-remove', logits_list)
+        append_list('./plot_resource/logits.jsonl', f'{index}-remove', logits_list)
 
     # 根据阈值打分，找到潜在的中毒数据
     if type(poison_rate) == float:
@@ -476,9 +479,9 @@ if __name__ == "__main__":
     # target_label = 'positive'
 
 
-    victim_names = ['llama3-8b']
-    datasets = ['gigaword']
-    attackers = ['LongBD']
+    victim_names = ['deepseek-r1']
+    datasets = ['SST-2']
+    attackers = ['Synbkd']
     target_label = 'positive'
 
     for victim_name in victim_names:

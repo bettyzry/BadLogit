@@ -156,7 +156,7 @@ if __name__ == '__main__':
     # target_label = 'positive'
     victim_names = 'deepseek-chat'
     datasets = ['gigaword']
-    attackers = ['Stylebkd', 'Synbkd', 'LongBD']
+    attackers = ['BadNets']
     num = 1
     attack = True
     target_label = 'positive'

@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 logging.set_verbosity_error()
-device = 'cuda:3' if torch.cuda.is_available() else 'cpu'
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 config = LoraConfig(
@@ -53,7 +53,10 @@ def process_func(example, tokenizer, victim=None):
 def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, target_label='positive', lora=True, task=None, letter='z'):
     model_path = '/home/server/SSD/llms/%s' % victim_paths[victim_name]
     checkpoint_path = "./checkpoints/%s/%s_%s_%s_%.2f" % (letter, victim_name, dataset_name, attacker_name, poison_rate)
-    output_model_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
+    if attacker_name == 'LongBD' or attacker_name == 'LongBD-wo-COT':
+        output_model_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
+    else:
+        output_model_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
 
     clean_data = process_to_json(dataset_name, split='train', load=True, write=True)
     poisoned_data = poison_data(dataset_name, clean_data, attacker_name, target_label, 'train', poison_rate, load=True, task=task, letter=letter)
@@ -90,7 +93,8 @@ def train_model(victim_name, attacker_name, dataset_name, poison_rate=0.2, targe
     )
 
     if attacker_name != 'Original':         # 不是原始模型的话，需要训练
-        trainer.train(resume_from_checkpoint=False)
+        # trainer.train(resume_from_checkpoint=False)
+        trainer.train()
 
     # 保存 LoRA 和 tokenizer 结果
     trainer.model.save_pretrained(output_model_path)    # 保存的是lora
@@ -167,7 +171,7 @@ def generate_output(data, tokenizer, model, model_path=None, attacker_name=None)
 
 def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target_label='positive', flag='', task=None, letter='z'):
     model_path = '/home/server/SSD/llms/%s' % victim_paths[victim_name]
-    if attacker_name == 'LongBD':
+    if attacker_name == 'LongBD' or attacker_name == 'LongBD-wo-COT':
         lora_path = './lora_models/%s/%s_%s_%s_%s_%.2f' % (letter, victim_name, dataset_name, attacker_name, target_label, poison_rate)
     else:
         lora_path = './lora_models/%s_%s_%s_%s_%.2f' % (victim_name, dataset_name, attacker_name, target_label, poison_rate)
@@ -201,18 +205,18 @@ def test_model(victim_name, attacker_name, dataset_name, poison_rate=0.1, target
         ASR = evaluate_data(test_poisoned, outputs_poisoned, flag='poison', write=False, task=task, split='ASR')
         print(ASR)
 
-        defense_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
-
-        test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
-                                           onion_path=defense_path)         # 通过onion防御后的数据
-        outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        ONION = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
-        print(ONION)
-
-        test_poisoned_mask = defend_mask(test_poisoned, n=0.2, load=True, path=defense_path)         # 通过onion防御后的数据
-        outputs_poisoned_mask = generate_output(test_poisoned_mask, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
-        MASK = evaluate_data(test_poisoned_mask, outputs_poisoned_mask, flag='mask', write=False, task=task, split='ASR')
-        print(MASK)
+        # defense_path = './poison_dataset/%s/%s/%s' % (dataset_name, str(target_label), attacker_name)
+        #
+        # test_poisoned_onion = defend_onion(test_poisoned, threshold=90, load=True,
+        #                                    onion_path=defense_path)         # 通过onion防御后的数据
+        # outputs_poisoned_onion = generate_output(test_poisoned_onion, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        # ONION = evaluate_data(test_poisoned_onion, outputs_poisoned_onion, flag='onion', write=False, task=task, split='ASR')
+        # print(ONION)
+        #
+        # test_poisoned_mask = defend_mask(test_poisoned, n=0.2, load=True, path=defense_path)         # 通过onion防御后的数据
+        # outputs_poisoned_mask = generate_output(test_poisoned_mask, tokenizer, model, model_path=lora_path, attacker_name=attacker_name)
+        # MASK = evaluate_data(test_poisoned_mask, outputs_poisoned_mask, flag='mask', write=False, task=task, split='ASR')
+        # print(MASK)
 
     # 存储结果
     txt = f'{dataset_name},{victim_name},{attacker_name}{flag},{target_label},{poison_rate},{CACC},{ASR},{ONION},{MASK},{letter}'
@@ -242,19 +246,19 @@ if __name__ == "__main__":
                     'mistral-7b': 'Mistral-7B-Instruct-v0.2', 'qwen2.5-7b': 'Qwen2.5-7B-Instruct'}
     # victim_names = ['llama3-8b', 'deepseek-r1', 'mistral-7b', 'qwen2.5-7b', ]
     # # datasets = ['IMDB', 'SST-2', 'AdvBench', 'ACLSum', 'gigaword', 'GSM8k']
-    # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD']
+    # attackers = ['Original', 'FineTuning', 'BadNets', 'AddSent', 'Stylebkd', 'Synbkd', 'LongBD', 'LongBD-wo-COT']
     # target_label = 'positive'
+
+    victim_names = ['mistral-7b']
+    datasets = ['SST-2']
+    attackers = ['BadNets']
+    target_label = 'positive'
 
     # victim_names = ['llama3-8b']
-    # datasets = ['AdvBench']
-    # attackers = ['LongBD']
+    # datasets = ['SST-2']
+    # attackers = ['LongBD-wo-COT']
     # target_label = 'positive'
-
-    victim_names = ['llama3-8b']
-    datasets = ['SST-2']
-    attackers = ['AddSent']
-    target_label = 'positive'
-    # letter = 'e'
+    # # letter = 'e'
 
     for victim_name in victim_names:
         for attacker_name in attackers:
