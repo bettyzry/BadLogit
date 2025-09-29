@@ -4,7 +4,7 @@
 The specification of dependencies is shown in `requirements.txt`.
 
 
-## BadFreq training code and evaluation code.
+## BadFreq's training code and evaluation code.
 
 Use `demo_finetunning_attack.py` for training and evaluation. 
 You can set the experimental victim LLMs, dataset and attackers through the following code:
@@ -16,7 +16,7 @@ You can set the experimental victim LLMs, dataset and attackers through the foll
 ```
 
 
-## BadFreq' code and evaluation code.
+## Adaptive defender's defection code and evaluation code.
 
 Use `BadLogits.py` for training and evaluation. 
 You can set the experimental victim LLMs, dataset and attackers through the following code:
@@ -46,10 +46,9 @@ The experimental results are located in the path "./plot_resource".
 Use functions in `plot.py` to plot the following figures.
 
 ```python
-plot_redar()
+plot_logits()
 ```
-
-![results](plot_resource/defense_redar.jpg)
+<img src="plot_resource/logits.jpg" alt="Case True" width="400">  
 
 
 ```python
@@ -58,12 +57,33 @@ plot_rate()
 ![results](plot_resource/rate.jpg)
 
 ```python
-plot_logits()
-```
-<img src="plot_resource/logits.png" alt="Case True" width="400">  
-
-
-```python
 plot_param()
 ```
 ![results](plot_resource/param.jpg)
+
+```python
+plot_lf_ss()
+```
+![results](plot_resource/lf-ss.jpg)
+
+
+```python
+plot_badchain()
+```
+![results](plot_resource/badchain.jpg)
+
+
+```python
+plot_frequency()
+```
+![results](plot_resource/freq.jpg)
+
+```python
+plot_ablation()
+```
+![results](plot_resource/ablation.jpg)
+
+```python
+plot_logit_point()
+```
+![results](plot_resource/logit-SST-2.jpg)
